@@ -28,6 +28,10 @@ def Stop_loss_order(Client:Client, Symbol:str ,Side:str ,PositionSide:str ,Type:
                                         recvWindow = 5000,
                                         timestamp = int(time.time()*1000))
 
+
+
+
+"""
 def Monitoring_open_Positions(client:Client):
     if db_Orders.command('count','Open_Orders')['n'] > 0:
         if len(db_Orders['Open_Orders'].find({'status':'FILLED'}).to_list()) == max_open_positions:
@@ -81,3 +85,4 @@ def Monitoring_open_Positions(client:Client):
 while True:
     Monitoring_open_Positions(client=client)
     time.sleep(5)
+"""

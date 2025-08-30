@@ -1,0 +1,32 @@
+name: Run Trading System
+
+on:
+    push:
+        branches: 
+            - main
+
+jobs:
+    deploy:
+          runs-on: ubuntu-latest
+
+          steps:
+            - name: Checkout repo
+              uses: actions/Checkout@v3
+
+            - name: Deploy to my Debian server
+              uses: appleboy/ssh-action@v1.0.0
+              with:
+                host: admin
+                username: ${{ secrets.SERVER_IP }}
+                key: ${{ secrets.AWS_PEM_KEY}}
+                script: |
+                  cd ~/Trading_System
+                  git pull origin main
+                  docker compose down
+                  docker compose up -d --build
+
+
+
+
+
+    

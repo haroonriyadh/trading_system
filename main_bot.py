@@ -1,44 +1,34 @@
-import requests
 from binance.client  import Client
-from Database import mongo_client,db,db_OB,db_Orders
+from Database import db_candle,db_OB,db_Orders,rides
 from datetime import datetime,timedelta
 from concurrent.futures import ThreadPoolExecutor
 import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from zoneinfo import ZoneInfo
-#import psutil
 from ticker_rules import rules
-from numba import njit
+from binance_client import client,Open_Order,Stop_loss_order,Take_profit_order,count_dicimal_places,format_price,format_qty
+from telegram_bot import send_telegram_message
 
-# إعداد مفاتيح Binance API وTelegram
-api_key = "MiQ3oXj2nqX2vZcOE3QO7ZsM3qLYIVtR1IYMl6TExUX88glGNCIjuwETUHKNE6Vy"
-api_secret = "25IpcykYfndlVvmIaVPtGEq4fLSelVJSb6bFRl9JI9nHMY4UT0GT1fL7EerwNrhT"
-
-client = Client(api_key=api_key,api_secret=api_secret)
 
 symbols = list(rules.keys())
 
-# إعداد مفاتيح Binance API وTelegram
-TELEGRAM_TOKEN = '7540566988:AAE-RRfOVWraT-co87saoHTfMJujxDQEjaA'
-TELEGRAM_CHAT_ID = '6061081574'
+Risk_in_Position = 1
 
-Risk_in_Position = 10
-
-fees = 0.07
+fees = 0.04
 
 Risk_Reward = 2
 
 max_open_positions = 4
 
-@njit
+#@njit
 def Amount_To_Risk(balance, max_loss, buy_price ,sl ,fees):
     return (balance*(max_loss/(((abs((buy_price/sl)-1)*100))+fees)))/buy_price
 
-@njit
+#@njit
 def TP_long(buy_price, sl, fees, RRR):
     return buy_price*(((((abs(((buy_price/sl)-1)*100)+fees)*RRR)+fees)/100)+1)
 
-@njit
+#@njit
 def TP_short(buy_price, sl, fees, RRR):
     return buy_price*((((((abs(((sl/buy_price)-1)*100)+fees)*RRR)+fees)*-1)/100)+1)
 
@@ -48,117 +38,9 @@ def get_next_15_min():
     next_time = now + timedelta(minutes=minutes_to_next_15)
     return next_time.replace(second=0,microsecond=0)
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message}
-    
-    try:
-        response = requests.post(url=url, json=payload)
-        if response.status_code == 200:
-            print("رسالة Telegram تم إرسالها بنجاح")
-        else:
-            print(f"Failed to send message, status code: {response.status_code}")
-    except Exception as e:
-        print(f"Error sending Telegram message: {e}")
-
-def count_dicimal_places(step):
-    return len(format(step,'f').split('.')[1]) if '.' in format(step,'f')  else 0
-
-def format_price(symbol,price):
-    return round(price - (price % rules[symbol][0]),count_dicimal_places(rules[symbol][0]))
-
-def format_qty(symbol,qty):
-    return  int(qty) if rules[symbol][1] == 1  else round(qty - (qty % rules[symbol][1]),count_dicimal_places(rules[symbol][1]))
-
-def Open_Order(Client, Symbol:str, Side:str ,PositionSide:str ,Type:str ,Qty,Price ,Stop_price):
-    return Client.futures_create_order(symbol = Symbol,
-                                        side = Side,
-                                        positionSide = PositionSide,
-                                        type = Type,
-                                        timeInForce='GTD',
-                                        quantity = Qty,
-                                        price = Price,
-                                        stopPrice = Stop_price,
-                                        goodTillDate = int((datetime.now() + timedelta(minutes=15)).timestamp()*1000),
-                                        recvWindow = 5000,
-                                        timestamp = int(time.time()*1000))
-
-def Take_profit_order(Client, Symbol:str ,Side:str ,PositionSide:str ,Type:str, Take_Profit_price):
-    return Client.futures_create_order(symbol = Symbol,
-                                        side = Side,
-                                        positionSide = PositionSide,
-                                        type = Type,
-                                        stopPrice = Take_Profit_price,
-                                        closePosition = True,
-                                        recvWindow = 5000,
-                                        timestamp = int(time.time()*1000))
-
-def Stop_loss_order(Client, Symbol:str ,Side:str ,PositionSide:str ,Type:str ,Stop_Loss_price):
-    return Client.futures_create_order(symbol = Symbol,
-                                        side = Side,
-                                        positionSide = PositionSide,
-                                        type = Type,
-                                        stopPrice = Stop_Loss_price,
-                                        closePosition = True,
-                                        recvWindow = 5000,
-                                        timestamp = int(time.time()*1000))
-
-def Monitoring_open_Positions():
-    if db_Orders.command('count','Open_Orders')['n'] > 0:
-        if db_Orders['Open_Orders'].count_documents({'status':'FILLED'}) == max_open_positions:
-            for order in db_Orders['Open_Orders'].find({'status':'NEW'}):
-                client.futures_cancel_order(symbol=order['symbol'],orderId=order['OrderId'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                db_OB[order['symbol']].update_one({'_id':order['OB_Id']},{'$set':{'In_Trade':False}})
-                db_Orders['Open_Orders'].delete_one({'symbol':order['symbol'],'OrderId':order['OrderId']})
-        
-        for order in db_Orders['Open_Orders'].find({}):
-            if order['status'] == 'NEW':
-                Order = client.futures_get_order(symbol = order['symbol'],orderId = order['OrderId'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                if Order['status'] == ('FILLED' or 'PARTIALLY_FILLED') and Order['type'] == 'LIMIT' and order['Time_Update'] > datetime.now():
-                    
-                    tp_order = Take_profit_order(Client=client,
-                                                Symbol=order['symbol'],
-                                                Side='BUY' if order['side'] == 'SELL' else 'SELL',
-                                                PositionSide=order['positionSide'],
-                                                Type='TAKE_PROFIT_MARKET',
-                                                Take_Profit_price=format_price(order['symbol'],order['Take_profit']))
-                                    
-                    sl_order = Stop_loss_order(Client=client,
-                                            Symbol=order['symbol'],
-                                            Side='BUY' if order['side'] == 'SELL' else 'SELL',
-                                            PositionSide=order['positionSide'],
-                                            Type='STOP_MARKET',
-                                            Stop_Loss_price=format_price(order['symbol'],order['Stop_loss']))
-                                            
-                    send_telegram_message(f"New Position: \nSymbol: {order['symbol']}\nSide: {order['side']}\nEntryPrice: {Order['price']}\nTakeProfit: {tp_order['stopPrice']}\nStopLoss: {sl_order['stopPrice']}")
-
-                    db_Orders['Open_Orders'].update_one(order,
-                                                        {'$set':{'status':Order['status'],
-                                                                 'Take_Profit_id':tp_order['orderId'],
-                                                                 'Stop_Loss_id':sl_order['orderId']}})
-                    
 
 
-                elif order['Time_Update'] <= datetime.now():
-                    client.futures_cancel_order(symbol=order['symbol'],orderId=order['OrderId'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                    db_OB[order['symbol']].update_one({'_id':order['OB_Id']},{'$set':{'In_Trade':False}})
-                    db_Orders['Open_Orders'].delete_one(order)
-                    
-                    
-            elif order['status'] == ('FILLED' or 'PARTIALLY_FILLED'):
-                Order_Take = client.futures_get_order(symbol = order['symbol'],orderId = order['Take_Profit_id'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                Order_Stop = client.futures_get_order(symbol = order['symbol'],orderId = order['Stop_Loss_id'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                if Order_Take['status'] == 'FILLED':
-                    client.futures_cancel_order(symbol=Order_Stop['symbol'],orderId=Order_Stop['orderId'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                    send_telegram_message(f"{Order_Take['symbol']} Alert: Take Profit Reached!\nClose your position to secure profit")
-                    db_Orders['Open_Orders'].delete_one(order)
-                    db_OB[order['symbol']].update_one({'_id':order['OB_Id']},{'$set':{'In_Trade':False}})
 
-                elif Order_Stop['status'] == 'FILLED':
-                    client.futures_cancel_order(symbol=Order_Take['symbol'],orderId=Order_Take['orderId'],recvWindow = 5000,timestamp = int(time.time()*1000))
-                    send_telegram_message(f"{Order_Stop['symbol']} Alert: Stop Loss Triggered!\nExit the position to minimize loss")
-                    db_Orders['Open_Orders'].delete_one(order)
-                    db_OB[order['symbol']].update_one({'_id':order['OB_Id']},{'$set':{'In_Trade':False}})
 
 def fetch_and_store_candle(symbol):
     try:
@@ -171,12 +53,12 @@ def fetch_and_store_candle(symbol):
                          "Volume": float(data[0][7]),
                          "Close_time": datetime.fromtimestamp(data[0][6] / 1000)}
         
-        db[symbol+'_1m'].insert_one(candle_record)
+        db_candle[symbol+'_1m'].insert_one(candle_record)
     
     except Exception as e:
         print(e)
         
-    if symbol+'_1m' in db.list_collection_names() and symbol in db_OB.list_collection_names():
+    if symbol+'_1m' in db_candle.list_collection_names() and symbol in db_OB.list_collection_names():
       
         db_OB[symbol].update_many({},[{'$set':{'Distance':{'$abs':{'$subtract':[candle_record['Close'],'$Activation_price']}}}}])
         
@@ -271,8 +153,8 @@ def fetch_and_store_candle(symbol):
                 
     if candle_record['Open_time'].minute % 15 == 0:
 
-        if db.command('count',symbol+'_15m')['n'] >= 4:
-            candles = db[symbol+'_15m'].aggregate([{'$sort':{'Open_time':-1}},{'$limit':4}]).to_list()
+        if db_candle.command('count',symbol+'_15m')['n'] >= 4:
+            candles = db_candle[symbol+'_15m'].aggregate([{'$sort':{'Open_time':-1}},{'$limit':4}]).to_list()
             
             #Get Bullish Order Block
             if candles[2]['Low'] <= candles[3]['Low'] and\
@@ -328,11 +210,11 @@ def fetch_and_store_candle(symbol):
                                           'Distance':abs(float(candle_15m[4][4])-float(candle_15m[1][2])),
                                           'In_Trade':False})
                 
-        db[symbol+'_15m'].insert_one(candle_record)
+        db_candle[symbol+'_15m'].insert_one(candle_record)
     
-    elif symbol+'_15m' in db.list_collection_names() and db[symbol+'_15m'].count_documents({}) > 0:
-        last_candle_15m = db[symbol+'_15m'].aggregate([{'$sort':{'Open_time':-1}},{'$limit':1}]).to_list()
-        db[symbol+'_15m'].update_one({'Open_time':last_candle_15m[0]['Open_time']},
+    elif symbol+'_15m' in db_candle.list_collection_names() and db_candle[symbol+'_15m'].count_documents({}) > 0:
+        last_candle_15m = db_candle[symbol+'_15m'].aggregate([{'$sort':{'Open_time':-1}},{'$limit':1}]).to_list()
+        db_candle[symbol+'_15m'].update_one({'Open_time':last_candle_15m[0]['Open_time']},
                                         {'$set':{'High':candle_record['High'] if candle_record['High'] > last_candle_15m[0]['High'] else last_candle_15m[0]['High'],
                                                  'Low':candle_record['Low'] if candle_record['Low'] < last_candle_15m[0]['Low'] else last_candle_15m[0]['Low'],
                                                  'Close':candle_record['Close'],
@@ -345,8 +227,8 @@ def Pull_data_for_miunte():
 
 
 ''' 
-for symbol in db.list_collection_names():
-    db[symbol].delete_many({})
+for symbol in db_candle.list_collection_names():
+    db_candle[symbol].delete_many({})
 
 for symbol in db_OB.list_collection_names():
     db_OB[symbol].delete_many({})
@@ -355,21 +237,23 @@ for symbol in db_OB.list_collection_names():
 
 time_zone = ZoneInfo('Asia/Riyadh')
 
-Scheduler = BackgroundScheduler(timezone=time_zone)
+if __name__ == "__main__":
 
-Scheduler.add_job(Pull_data_for_miunte,'cron',second=10)
+    Scheduler = BackgroundScheduler(timezone=time_zone)
 
-Scheduler.add_job(Monitoring_open_Positions,'interval',seconds=10)
+    Scheduler.add_job(Pull_data_for_miunte,'cron',second=10)
 
-Scheduler.start()
+    #Scheduler.add_job(Monitoring_open_Positions,'interval',seconds=10)
 
-try:
-    
-    while True:
-        pass
+    Scheduler.start()
+
+    try:
         
-except Exception as e:
-    print(e)
+        while True:
+            pass
+            
+    except Exception as e:
+        print(e)
 
 
        
