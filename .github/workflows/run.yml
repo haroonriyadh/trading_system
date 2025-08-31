@@ -30,10 +30,8 @@ jobs:
             git pull origin main
 
             echo "Stopping old containers..."
-            docker-compose down || docker compose down
+            docker compose down || docker compose down
 
             echo "Building and starting containers..."
-            docker-compose up -d --build || docker compose up -d --build
+            docker compose up -d --build || docker compose up -d --build
 
-            echo "Showing container logs..."
-            docker-compose logs -f app || docker compose logs -f app
