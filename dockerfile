@@ -1,5 +1,5 @@
 # استخدم صورة بايثون 3.11 خفيفة
-FROM python:3.11-alpine
+FROM python:3.12-alpine-a
 
 # إعداد مجلد العمل
 WORKDIR /app
