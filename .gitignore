@@ -21,13 +21,6 @@ venv/
 # -----------------
 .env
 
-# -----------------
-# Docker
-# -----------------
-*.pid
-*.sock
-docker-compose.override.yml
-docker-compose.override.yaml
 
 # -----------------
 # Databases / Data files
