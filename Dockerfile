@@ -10,7 +10,7 @@ RUN apk-get update && apk-get install -y --no-install-recommends \
     python3-dev \
     libffi-dev \
     libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apk/lists/*
 
 # نسخ ملفات المشروع
 COPY . /app
