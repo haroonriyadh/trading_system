@@ -10,14 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ سحب آخر نسخة من المستودع عبر SSH
+      # 1️⃣ Checkout آخر نسخة من المستودع عبر HTTPS باستخدام GitHub Token
       - name: Checkout repo
         uses: actions/checkout@v3
         with:
-          ssh-key: ${{ secrets.AWS_PEM_KEY }}
-          submodules: true  # لو عندك submodules
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2️⃣ الدخول للسيرفر وتنفيذ الأوامر
+      # 2️⃣ SSH إلى السيرفر لتنفيذ الأوامر
       - name: Deploy to Debian server
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -27,7 +26,7 @@ jobs:
           script: |
             cd ~/trading_system
 
-            echo "Pulling latest code via SSH..."
+            echo "Pulling latest code..."
             git pull origin main
 
             echo "Stopping old containers..."
