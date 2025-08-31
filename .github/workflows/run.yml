@@ -30,8 +30,8 @@ jobs:
             git pull
 
             echo "Stopping old containers..."
-            docker compose down || docker compose down
+            docker compose down --remove-orphans
 
             echo "Building and starting containers..."
-            docker compose up -d --build || docker compose up -d --build
+            docker compose up -d --build
 
