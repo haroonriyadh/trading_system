@@ -2,7 +2,7 @@
 # Python
 # -----------------
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
 env/
