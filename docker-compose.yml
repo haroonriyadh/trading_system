@@ -1,4 +1,3 @@
-
 services:
   app:
     build:
@@ -17,7 +16,7 @@ services:
       - redis
 
   mongodb:
-    image: mongo:7.0.1-bionic
+    image: mongo:7.0.1-jammy
     container_name: trading_system_mongo
     restart: always
     ports:
@@ -26,7 +25,7 @@ services:
       - mongo_data:/data/db
 
   redis:
-    image: redis:8.2.14-alpine
+    image: redis:8-alpine
     container_name: trading_system_redis
     restart: always
     ports:
