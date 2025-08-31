@@ -1,5 +1,5 @@
 from pybit.unified_trading import WebSocket
-from Database import db_candle,db_OB,Redis
+#from Database import db_candle,db_OB,Redis
 from datetime import datetime
 import json
 from symbols import symbols 
@@ -20,14 +20,15 @@ def make_handler(symbol):
         
 
         # تحديث الكاش (Redis)
-        Redis.set(symbol, json.dumps(candle_obj))
-        print(f"Symbol : {symbol} " ,Redis.get(symbol))
-        
+        #Redis.set(symbol, json.dumps(candle_obj))
+        #print(f"Symbol : {symbol} " ,Redis.get(symbol))
+        print(f"Symbol : {symbol} " ,candle_obj)
+
         # إذا اكتملت الشمعة
         if msg['data'][0]["confirm"]:
             print("Closed")
             # خزّن في Mongo
-            db_candle[symbol].insert_one(candle_obj)
+            #db_candle[symbol].insert_one(candle_obj)
     return handle_kline
 
 
