@@ -16,8 +16,8 @@ jobs:
             - name: Deploy to my Debian server
               uses: appleboy/ssh-action@v1.0.0
               with:
-                host: admin
-                username: ${{ secrets.SERVER_IP }}
+                host: ${{ secrets.SERVER_IP }}
+                username: admin
                 key: ${{ secrets.AWS_PEM_KEY}}
                 script: |
                   cd ~/Trading_System

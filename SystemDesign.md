@@ -1,5 +1,11 @@
 #Trading System Design
 ```mermaid
 graph TD
-    Websocket/Candle --> Bot[Trading Bot]
-    BOT --> ExchangeAPI[Exchange API]
+    Websocket_Candle
+    Websocket_Candle --> Mongodb_Candle
+    Websocket_Candle --> Redis
+    
+    Stratery_Engine
+    Mongodb_Candle --> Stratery_Engine
+    
+
