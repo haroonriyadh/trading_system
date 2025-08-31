@@ -16,7 +16,7 @@ services:
       - redis
 
   mongodb:
-    image: mongo:7.0.1-jammy
+    image: mongo:7.0-jammy
     container_name: trading_system_mongo
     restart: always
     ports:
