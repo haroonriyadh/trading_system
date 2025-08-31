@@ -1,15 +1,22 @@
-# استخدم صورة بايثون 3.11 خفيفة
-FROM python:3.12-alpine-a
+FROM python:3.12-alpine
 
-# إعداد مجلد العمل
+# تثبيت أدوات البناء الأساسية
+RUN apk add --no-cache \
+    build-base \
+    git \
+    bash \
+    python3-dev \
+    libffi-dev \
+    openssl-dev
+
 WORKDIR /app
 
-# نسخ ملفات المشروع
 COPY . /app
 
-# تحديث pip وتثبيت المتطلبات
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# تحديث pip وتثبيت المكتبات
+RUN python -m pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# الأمر الافتراضي لتشغيل البوت
+ENV PYTHONUNBUFFERED=1
+
 CMD ["python3", "WebSocket_Real_time.py"]
