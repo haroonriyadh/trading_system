@@ -2,15 +2,6 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
-# تثبيت أدوات البناء و git و bash على Debian
-RUN apk-update && apk-add -y --no-install-recommends \
-    build-essential \
-    git \
-    bash \
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    && rm -rf /var/lib/apk/lists/*
 
 # نسخ ملفات المشروع
 COPY . /app
