@@ -1,5 +1,5 @@
 from pybit.unified_trading import WebSocket
-#from Database import db_candle,db_OB,Redis
+from Database import db_candle,db_OB,Redis
 from datetime import datetime
 import json
 from symbols import symbols 
@@ -28,7 +28,9 @@ def make_handler(symbol):
         if msg['data'][0]["confirm"]:
             print("Closed")
             # خزّن في Mongo
-            #db_candle[symbol].insert_one(candle_obj)
+            db_candle[symbol].insert_one(candle_obj)
+
+
     return handle_kline
 
 
