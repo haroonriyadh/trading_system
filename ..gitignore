@@ -1,0 +1,50 @@
+# -----------------
+# Python
+# -----------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+env/
+venv/
+*.egg-info/
+*.egg
+*.pytest_cache/
+
+# -----------------
+# Logs
+# -----------------
+*.log
+
+# -----------------
+# Environment variables
+# -----------------
+.env
+
+# -----------------
+# Docker
+# -----------------
+*.pid
+*.sock
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# -----------------
+# Databases / Data files
+# -----------------
+*.sqlite3
+mongo_data/
+redis_data/
+
+# -----------------
+# VS Code / IDE
+# -----------------
+.vscode/
+.idea/
+*.code-workspace
+
+# -----------------
+# System files
+# -----------------
+.DS_Store
+Thumbs.db

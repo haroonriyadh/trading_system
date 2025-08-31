@@ -13,16 +13,15 @@ services:
     working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
-      - MONGO_URI=mongodb://mongo:27017/tradingdb
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
     depends_on:
-      - mongo
+      - mongodb
       - redis
+    extra_hosts:
+      - "localhost:127.0.0.1"   # يضمن أن localhost يصل للخدمة داخل الشبكة
 
-  mongo:
+  mongodb:
     image: mongo:6.0-jammy
-    container_name: trading_mongo
+    container_name: mongodb
     restart: always
     ports:
       - "27017:27017"
@@ -31,7 +30,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    container_name: trading_redis
+    container_name: redis
     restart: always
     ports:
       - "6379:6379"
