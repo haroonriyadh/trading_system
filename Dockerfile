@@ -3,7 +3,7 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 # تثبيت أدوات البناء و git و bash على Debian
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk-get update && apk-get install -y --no-install-recommends \
     build-essential \
     git \
     bash \
