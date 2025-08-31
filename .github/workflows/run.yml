@@ -20,7 +20,7 @@ jobs:
                 username: admin
                 key: ${{ secrets.AWS_PEM_KEY}}
                 script: |
-                  cd ~/Trading_System
+                  cd ~/trading_system
                   git pull origin main
                   docker compose down
                   docker compose up -d --build
