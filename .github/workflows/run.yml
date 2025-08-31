@@ -1,32 +1,37 @@
 name: Run Trading System
 
 on:
-    push:
-        branches: 
-            - main
+  push:
+    branches: 
+      - main
 
 jobs:
-    deploy:
-          runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
 
-          steps:
-            - name: Checkout repo
-              uses: actions/Checkout@v3
+    steps:
+      # 1️⃣ سحب آخر نسخة من المستودع
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-            - name: Deploy to my Debian server
-              uses: appleboy/ssh-action@v1.0.0
-              with:
-                host: ${{ secrets.SERVER_IP }}
-                username: admin
-                key: ${{ secrets.AWS_PEM_KEY}}
-                script: |
-                  cd ~/trading_system
-                  git pull origin main
-                  docker compose down
-                  docker compose up -d --build
+      # 2️⃣ الدخول للسيرفر وتنفيذ الأوامر
+      - name: Deploy to my Debian server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: admin
+          key: ${{ secrets.AWS_PEM_KEY }}
+          script: |
+            cd ~/trading_system
 
+            echo "Pulling latest code..."
+            git pull origin main
 
+            echo "Stopping old containers..."
+            docker compose down
 
+            echo "Building and starting containers..."
+            docker compose up -d --build --no-cache
 
-
-    
+            echo "Showing container logs..."
+            docker compose logs -f trading_system
