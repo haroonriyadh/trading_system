@@ -27,7 +27,7 @@ jobs:
             cd ~/trading_system
 
             echo "Pulling latest code..."
-            git pull origin main
+            git pull
 
             echo "Stopping old containers..."
             docker compose down || docker compose down
