@@ -26,8 +26,8 @@ venv/
 # Databases / Data files
 # -----------------
 *.sqlite3
-mongo_data/
-redis_data/
+mongo/
+redis/
 
 # -----------------
 # VS Code / IDE
