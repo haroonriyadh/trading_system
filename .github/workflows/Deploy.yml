@@ -19,13 +19,9 @@ jobs:
           key: ${{ secrets.AWS_PEM_KEY }}
           script: |
             cd ~/trading_system
-
-            echo "Pulling latest code..."
+            git reset --hard HEAD
+            git clean -fd
             git pull origin main
-
-            echo "Stopping old containers..."
             docker compose down --remove-orphans
-
-            echo "Building and starting containers..."
             docker compose up -d --build
 
