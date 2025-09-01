@@ -27,7 +27,7 @@ jobs:
             cd ~/trading_system
 
             echo "Pulling latest code..."
-            git pull
+            git pull origin main
 
             echo "Stopping old containers..."
             docker compose down --remove-orphans
