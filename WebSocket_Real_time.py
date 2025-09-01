@@ -1,49 +1,39 @@
+from Database import db_candle,Redis
 from pybit.unified_trading import WebSocket
-from Database import db_candle,db_OB,Redis
-from datetime import datetime
+from time import sleep
+from symbols import symbols
 import json
-from symbols import symbols 
+
+ws = WebSocket(
+    testnet=True,
+    channel_type="linear",
+)
+def handle_message(data):
+    candle = data['data'][0]
+    # استخراج اسم الرمز من topic
+    symbol = data['topic'].split(".")[-1]
+    candle_obj = {
+        "open_time": candle["start"],
+        "open": float(candle["open"]),
+        "high": float(candle["high"]),
+        "low": float(candle["low"]),
+        "close": float(candle["close"]),
+        "volume": float(candle["volume"]),
+    }
+    # تحديث Redis
+    Redis.set(symbol, json.dumps(candle_obj))
+
+    # حفظ الشمعة المكتملة في Mongo
+    if candle["confirm"]:
+        db_candle[symbol].insert_one(candle_obj)
+
+    print(f"{symbol}: {candle_obj}")
 
 
-INTERVAL = 1
-
-def make_handler(symbol):
-    def handle_kline(msg):
-        candle_obj = {
-            "open_time": msg['data'][0]["start"],
-            "open": float(msg['data'][0]["open"]),
-            "high": float(msg['data'][0]["high"]),
-            "low": float(msg['data'][0]["low"]),
-            "close": float(msg['data'][0]["close"]),
-            "volume": float(msg['data'][0]["volume"]),
-                            }
-        
-        # تحديث الكاش (Redis)
-        Redis.set(symbol, json.dumps(candle_obj))
-        print(f"Symbol : {symbol} " ,Redis.get(symbol))
-
-
-        # إذا اكتملت الشمعة
-        if msg['data'][0]["confirm"]:
-            print("Closed")
-            # خزّن في Mongo
-            db_candle[symbol].insert_one(candle_obj)
-
-
-    return handle_kline
-
-
-# إنشاء WebSocket
-ws = WebSocket(testnet=False, channel_type="linear")
-
-for symbol in symbols:
-    make_handle = make_handler(symbol)
-
-    ws.kline_stream(
-        interval=INTERVAL,
-        symbol=symbol,
-        callback=make_handle
-        )
-
+ws.kline_stream(
+    interval=1,
+    symbol=symbols,
+    callback=handle_message
+)
 while True:
-    pass
+    sleep(5)
