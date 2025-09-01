@@ -10,12 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout آخر نسخة من المستودع عبر HTTPS باستخدام GitHub Token
-      - name: Checkout repo
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       # 2️⃣ SSH إلى السيرفر لتنفيذ الأوامر
       - name: Deploy to Debian server
         uses: appleboy/ssh-action@v1.0.0
