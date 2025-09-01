@@ -22,6 +22,7 @@ def make_handler(symbol):
         Redis.set(symbol, json.dumps(candle_obj))
         print(f"Symbol : {symbol} " ,Redis.get(symbol))
 
+
         # إذا اكتملت الشمعة
         if msg['data'][0]["confirm"]:
             print("Closed")
