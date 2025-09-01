@@ -11,6 +11,8 @@ services:
     working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
+      - MONGO_HOST=mongodb
+      - REDIS_HOST=redis
     depends_on:
       - mongodb
       - redis
