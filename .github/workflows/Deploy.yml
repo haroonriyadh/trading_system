@@ -1,27 +1,35 @@
-name: Run Trading System
+name: Deploy to AWS
 
 on:
   push:
-    branches: 
-      - main
+    branches:
+      - main   # يشتغل فقط لما تدفع تعديلات على الفرع main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 2️⃣ SSH إلى السيرفر لتنفيذ الأوامر
-      - name: Deploy to Debian server
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: admin
-          key: ${{ secrets.AWS_PEM_KEY }}
-          script: |
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/server_key.pem
+          chmod 600 ~/.ssh/server_key.pem
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy on Server
+        run: |
+          ssh -i ~/.ssh/server_key.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             cd ~/trading_system
+            echo "Resetting repo..."
             git reset --hard HEAD
             git clean -fd
+            echo "Pulling latest code..."
             git pull origin main
+            echo "Restarting containers..."
             docker compose down --remove-orphans
             docker compose up -d --build
-
+          EOF
