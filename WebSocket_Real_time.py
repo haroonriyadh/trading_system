@@ -26,13 +26,21 @@ def on_message(ws,message):
         "volume": float(candle["volume"]),
     }
     # تحديث Redis
-    Redis.set(symbol, json.dumps(candle_obj))
+    try:
+        Redis.set(symbol, json.dumps(candle_obj))
+    except Exception as e:
+        print(e)
+        pass
 
     # حفظ الشمعة المكتملة في Mongo
     if candle["confirm"]:
-        db_candle[symbol].insert_one(candle_obj)
-
-    print(f"Time: {datetime.fromtimestamp(int(candle['start'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
+        try:
+            db_candle[symbol].insert_one(candle_obj)
+        except Exception as e:
+            print(e)
+            pass
+        
+    print(f"Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
     print("-" * 60)
 
 def on_error(ws, error):
