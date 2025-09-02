@@ -18,7 +18,8 @@ services:
       - redis
 
   mongodb:
-    image: mongo:7.0-jammy
+    image: mongo:5.0.31-focal
+
     container_name: mongodb
     restart: always
     ports:

@@ -18,16 +18,18 @@ def on_message(ws,message):
     # استخراج اسم الرمز من topic
     symbol = data['topic'].split(".")[-1]
     candle_obj = {
-        "open_time": candle["start"],
-        "open": float(candle["open"]),
-        "high": float(candle["high"]),
-        "low": float(candle["low"]),
-        "close": float(candle["close"]),
-        "volume": float(candle["volume"]),
+        "Open_time": datetime.fromtimestamp(int(candle['start'])/1000),
+        "Open": float(candle["open"]),
+        "High": float(candle["high"]),
+        "Low": float(candle["low"]),
+        "Close": float(candle["close"]),
+        "Volume": float(candle["volume"]),
+        "Close_time": datetime.fromtimestamp(int(candle['end'])/1000)
+
     }
     # تحديث Redis
     try:
-        Redis.set(symbol, json.dumps(candle_obj))
+        Redis.set(symbol, json.dumps(candle_obj,default=str))
     except Exception as e:
         print(e)
         pass
@@ -39,8 +41,8 @@ def on_message(ws,message):
         except Exception as e:
             print(e)
             pass
-        
-    print(f"Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
+
+    print(f"{symbol} | Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
     print("-" * 60)
 
 def on_error(ws, error):
