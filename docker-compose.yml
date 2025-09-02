@@ -18,7 +18,7 @@ services:
       - redis
 
   mongodb:
-    image: mongo:5.0.31-focal
+    image: mongo:4.2.24-bionic
 
     container_name: mongodb
     restart: always
