@@ -20,13 +20,13 @@ def on_message(ws,message):
     data = json.loads(message)
     
     candle_obj = {
-        "Open_time": data["data"][0]["start"],
-        "Open": data["data"][0]["open"],
-        "High": data["data"][0]["high"],
-        "Low": data["data"][0]["low"],
-        "Close": data["data"][0]["close"],
-        "Volume": data["data"][0]["volume"],
-        "Close_time": data["data"][0]["end"]
+        "Open_time": int(data["data"][0]["start"]),
+        "Open": float(data["data"][0]["open"]),
+        "High": float(data["data"][0]["high"]),
+        "Low": float(data["data"][0]["low"]),
+        "Close": float(data["data"][0]["close"]),
+        "Volume": float(data["data"][0]["volume"]),
+        "Close_time": int(data["data"][0]["end"])
     }
 
     
@@ -36,7 +36,14 @@ def on_message(ws,message):
 
     # حفظ الشمعة المكتملة في Mongo
     if data['data'][0]["confirm"]:
-        db_candle[data['topic'].split(".")[-1]].insert_one(candle_obj)
+        db_candle[data['topic'].split(".")[-1]].insert_one({"Open_Time": datetime.fromtimestamp(candle_obj["Open_time"]/1000),
+                                                            "OHLCV" : [candle_obj["Open"],
+                                                                        candle_obj['High'],
+                                                                        candle_obj["Low"],
+                                                                        candle_obj["Close"],
+                                                                        candle_obj["Volume"],
+                                                                        ],
+                                                            "Close_Time":datetime.fromtimestamp(candle_obj["Close_time"]/1000)})
 
 
     print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {data["data"][0]["open"]}, High: {data["data"][0]["high"]}, Low: {data["data"][0]["low"]}, Close: {data["data"][0]["close"]}, Volume: {data["data"][0]["volume"]}")
