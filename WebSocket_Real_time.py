@@ -44,8 +44,8 @@ def on_message(ws,message):
             print(e)
             pass
 
-    print(f"{symbol} | Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
-    print("-" * 60)
+    #print(f"{symbol} | Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
+    #print("-" * 60)
 
 def on_error(ws, error):
     print('⚠️ WebSocket Error:', error)
