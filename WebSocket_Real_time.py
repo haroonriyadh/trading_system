@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 import websocket
 
-logging.basicConfig(filename='logfile_multi_kline.log', level=logging.DEBUG,
+logging.basicConfig(filename='logfile_multi_kline.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s %(message)s')
 
 interval = 1
@@ -27,6 +27,8 @@ def on_message(ws,message):
         "Close_time": datetime.fromtimestamp(int(candle['end'])/1000)
 
     }
+    
+    
     # تحديث Redis
     try:
         Redis.set(symbol, json.dumps(candle_obj,default=str))
