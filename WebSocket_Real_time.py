@@ -18,23 +18,15 @@ topics = [f"kline.{interval}.{symbol}" for symbol in symbols]
 
 def on_message(ws,message):
     data = json.loads(message)
-    prices = array.array("f",[float(data['data'][0]["open"]),
-                              float(data['data'][0]["high"]),
-                              float(data['data'][0]["low"]),
-                              float(data['data'][0]["close"]),
-                              float(data['data'][0]["volume"])])
-    
-    time = array.array("q",[int(data['data'][0]["start"]),
-                            int(data['data'][0]["end"])])
     
     candle_obj = {
-        "Open_time": time[0],
-        "Open": prices[0],
-        "High": prices[1],
-        "Low": prices[2],
-        "Close": prices[3],
-        "Volume": prices[4],
-        "Close_time": time[1]
+        "Open_time": data["data"][0]["start"],
+        "Open": data["data"][0]["open"],
+        "High": data["data"][0]["high"],
+        "Low": data["data"][0]["low"],
+        "Close": data["data"][0]["close"],
+        "Volume": data["data"][0]["volume"],
+        "Close_time": data["data"][0]["end"]
     }
 
     
@@ -47,7 +39,7 @@ def on_message(ws,message):
         db_candle[data['topic'].split(".")[-1]].insert_one(candle_obj)
 
 
-    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(time[0]/1000)} ,Open: {prices[0]}, High: {prices[1]}, Low: {prices[2]}, Close: {prices[3]}, Volume: {prices[4]}")
+    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {data["data"][0]["open"]}, High: {data["data"][0]["high"]}, Low: {data["data"][0]["low"]}, Close: {data["data"][0]["close"]}, Volume: {data["data"][0]["volume"]}")
     print("-" * 60)
 
 def on_error(ws, error):
