@@ -4,6 +4,10 @@ import json
 import logging
 from datetime import datetime
 import websocket
+import array
+import struct
+
+
 
 logging.basicConfig(filename='logfile_multi_kline.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s %(message)s')
@@ -14,38 +18,37 @@ topics = [f"kline.{interval}.{symbol}" for symbol in symbols]
 
 def on_message(ws,message):
     data = json.loads(message)
-    candle = data['data'][0]
-    # استخراج اسم الرمز من topic
-    symbol = data['topic'].split(".")[-1]
+    prices = array.array("f",[float(data['data'][0]["open"]),
+                              float(data['data'][0]["high"]),
+                              float(data['data'][0]["low"]),
+                              float(data['data'][0]["close"]),
+                              float(data['data'][0]["volume"])])
+    
+    time = array.array("q",[int(data['data'][0]["start"]),
+                            int(data['data'][0]["end"])])
+    
     candle_obj = {
-        "Open_time": datetime.fromtimestamp(int(candle['start'])/1000),
-        "Open": float(candle["open"]),
-        "High": float(candle["high"]),
-        "Low": float(candle["low"]),
-        "Close": float(candle["close"]),
-        "Volume": float(candle["volume"]),
-        "Close_time": datetime.fromtimestamp(int(candle['end'])/1000)
-
+        "Open_time": time[0],
+        "Open": prices[0],
+        "High": prices[1],
+        "Low": prices[2],
+        "Close": prices[3],
+        "Volume": prices[4],
+        "Close_time": time[1]
     }
+
     
     
     # تحديث Redis
-    try:
-        Redis.set(symbol, json.dumps(candle_obj,default=str))
-    except Exception as e:
-        print(e)
-        pass
+    Redis.set(data['topic'].split(".")[-1], json.dumps(candle_obj,default=str))
 
     # حفظ الشمعة المكتملة في Mongo
-    if candle["confirm"]:
-        try:
-            db_candle[symbol].insert_one(candle_obj)
-        except Exception as e:
-            print(e)
-            pass
+    if data['data'][0]["confirm"]:
+        db_candle[data['topic'].split(".")[-1]].insert_one(candle_obj)
 
-    #print(f"{symbol} | Time: {datetime.fromtimestamp(int(candle['timestamp'])/1000)} ,Open: {candle['open']}, High: {candle['high']}, Low: {candle['low']}, Close: {candle['close']}, Volume: {candle['volume']}")
-    #print("-" * 60)
+
+    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(time[0]/1000)} ,Open: {prices[0]}, High: {prices[1]}, Low: {prices[2]}, Close: {prices[3]}, Volume: {prices[4]}")
+    print("-" * 60)
 
 def on_error(ws, error):
     print('⚠️ WebSocket Error:', error)
