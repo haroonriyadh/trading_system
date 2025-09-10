@@ -1,9 +1,9 @@
 
 services:
-  Websocket_Candle:
+  websocket_wandle:
     build:
       context: .
-    container_name: Websocket_Candle
+    container_name: websocket_wandle
     environment:
       - SCRIPT_NAME=Websocket_Candle.py
       - MONGO_HOST=mongodb
@@ -15,10 +15,10 @@ services:
       - mongodb
       - redis
 
-  Strategy_Engine:
+  strategy_engine:
     build:
       context: .
-    container_name: Strategy_Engine
+    container_name: strategy_engine
     environment:
       - SCRIPT_NAME=Strategy_Engine.py
       - MONGO_HOST=mongodb
