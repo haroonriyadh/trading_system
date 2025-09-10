@@ -29,11 +29,10 @@ jobs:
             git clean -fd
             echo "Pulling latest code..."
             git pull origin main
+            echo "Removing old Docker images..."
+            docker system prune -af
+            docker image prune -af
             echo "Restarting containers..."
             docker-compose down -v
             docker-compose up -d --build
           EOF
-
-
-
-          
