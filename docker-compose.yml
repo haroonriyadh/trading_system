@@ -5,7 +5,7 @@ services:
       context: .
     container_name: websocket_wandle
     environment:
-      - SCRIPT_NAME=Websocket_Candle.py
+      - SCRIPT_NAME=WebSocket_Candle.py
       - MONGO_HOST=mongodb
       - REDIS_HOST=redis
     volumes:
