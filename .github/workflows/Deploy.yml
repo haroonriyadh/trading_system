@@ -23,7 +23,7 @@ jobs:
       - name: Deploy on Server
         run: |
           ssh -i ~/.ssh/server_key.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            cd ~/trading_system
+            cd ~/Trading_system
             echo "Resetting repo..."
             git reset --hard HEAD
             git clean -fd
