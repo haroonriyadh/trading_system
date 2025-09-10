@@ -1,40 +1,47 @@
-from binance.client import Client
 import math
-import pandas as pd
-import ast
-from decimal import Decimal
-from Database import mongo_client,db,db_OB,db_Orders
+import requests
+import json as js
+
+url = "https://api.bybit.com/v5/market/instruments-info"
+params = {"category": "linear"}
+resp = requests.get(url, params=params).json()
+
+symbols_info = {item["symbol"]: item for item in resp["result"]["list"]}
+
+def format_price(symbol: str, price: float) -> str:
+    tick_size = float(symbols_info[symbol]["priceFilter"]["tickSize"])
+    decimals = int(round(-math.log10(tick_size)))
+    return f"{price:.{decimals}f}"
+
+def format_qty(symbol: str, qty: float, price: float) -> str:
+    f = symbols_info[symbol]["lotSizeFilter"]
+    step = float(f["qtyStep"])
+    min_q = float(f["minOrderQty"])
+    max_q = float(f["maxOrderQty"])
+    min_notional = float(f.get("minNotionalValue", 0))  # بعض الرموز قد لا تحتوي على هذا الحقل
+
+    # ضبط الكمية ضمن الحدود المسموحة
+    qty = max(min_q, min(max_q, math.ceil(qty / step) * step))
+
+    # التأكد من أن القيمة الاسمية >= minNotionalValue
+    if price > 0 and qty * price < min_notional:
+        qty = math.ceil(min_notional / price / step) * step
+        qty = min(qty, max_q)  # لا تتجاوز الحد الأقصى
+
+    # حساب عدد الخانات العشرية
+    decimals = max(0, int(-math.log10(step))) if step < 1 else 0
+
+    return f"{qty:.{decimals}f}"
 
 
-'''
-for symbol in db_OB.list_collection_names():
-    db_OB[symbol].drop_indexes()
-    db_OB[symbol].create_index([('Distance', 1)])
+def min_qty(symbol: str) -> float:
+    return float(symbols_info[symbol]["lotSizeFilter"]["minOrderQty"])
 
-    print(f'Done Create Index for {symbol}')
-'''
-#print(db_Orders['Open_Orders'].count_documents({'status':'FILLED'}))
-'''
-rules = {}
-api_key = "MiQ3oXj2nqX2vZcOE3QO7ZsM3qLYIVtR1IYMl6TExUX88glGNCIjuwETUHKNE6Vy"
-api_secret = "25IpcykYfndlVvmIaVPtGEq4fLSelVJSb6bFRl9JI9nHMY4UT0GT1fL7EerwNrhT"
-client = Client(api_key=api_key,api_secret=api_secret)
-exchange = client.futures_exchange_info()
-for symbol in exchange['symbols']:
-    if symbol['symbol'].endswith('USDT') and (symbol['underlyingSubType'] == ['Meme'] or symbol['symbol'].startswith('1000')) and\
-       symbol['status'] == 'TRADING':
-        tickSize = float(symbol['filters'][0]['tickSize'])
-        minQty =   float(symbol['filters'][2]['minQty'])
-        stepSize = float(symbol['filters'][2]['stepSize'])
-        minNotional = float(symbol['filters'][5]['notional'])
-        ticksize = float(symbol['filters'][0]['tickSize'])
-        rules[symbol['symbol']] = [tickSize, minQty, stepSize, minNotional,ticksize]
-        print(rules[symbol['symbol']])
-    
-with open('d:/trading_system/ticker_rules.py', 'w') as f:
-    f.write('# 0 -- tickSize \n# 1 -- minQty \n# 2 -- stepSize \n# 3 -- minNotional \n# 4 -- ticksize \nrules = '+str(rules))
+def min_notional(symbol: str) -> float:
+    return float(symbols_info[symbol]["lotSizeFilter"]["minNotionalValue"])
 
-with open('d:/trading_system/symbols.py', 'w') as f:
-    f.write('symbols = '+str(list(rules.keys())))
-'''
+# حفظ في ملف JSON
+with open("exchange_info.json", "w", encoding="utf-8") as f:
+    js.dump(symbols_info, f, indent=4, ensure_ascii=False)
 
+print("تم حفظ البيانات في instruments_info.json ✅")

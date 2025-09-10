@@ -1,10 +1,7 @@
 APScheduler
 numpy
-okx
-okx_sdk
 pandas
 pybit
 pymongo
-python_binance
 redis
 Requests

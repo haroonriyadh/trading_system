@@ -4,15 +4,13 @@ import json
 import logging
 from datetime import datetime
 import websocket
-import array
-import struct
-
 
 
 logging.basicConfig(filename='logfile_multi_kline.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s %(message)s')
 
-interval = 1
+interval = 5
+
 # بناء قائمة المواضيع (topics) للاشتراك
 topics = [f"kline.{interval}.{symbol}" for symbol in symbols]
 
@@ -32,22 +30,20 @@ def on_message(ws,message):
     
     
     # تحديث Redis
-    Redis.set(data['topic'].split(".")[-1], json.dumps(candle_obj,default=str))
+    Redis.set(data['topic'].split(".")[-1], json.dumps(candle_obj))
 
     # حفظ الشمعة المكتملة في Mongo
     if data['data'][0]["confirm"]:
         db_candle[data['topic'].split(".")[-1]].insert_one({"Open_Time": datetime.fromtimestamp(candle_obj["Open_time"]/1000),
-                                                            "OHLCV" : [candle_obj["Open"],
-                                                                        candle_obj['High'],
-                                                                        candle_obj["Low"],
-                                                                        candle_obj["Close"],
-                                                                        candle_obj["Volume"],
-                                                                        ],
-                                                            "Close_Time":datetime.fromtimestamp(candle_obj["Close_time"]/1000)})
-
-
-    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {data["data"][0]["open"]}, High: {data["data"][0]["high"]}, Low: {data["data"][0]["low"]}, Close: {data["data"][0]["close"]}, Volume: {data["data"][0]["volume"]}")
-    print("-" * 60)
+                                                            "Open" : candle_obj["Open"],
+                                                            "High" : candle_obj['High'],
+                                                            "Low" :  candle_obj["Low"],
+                                                            "Close": candle_obj["Close"],
+                                                            "Volume":candle_obj["Volume"]})
+        
+        Redis.lpush(f"queue:{data['topic'].split(".")[-1]}_Close_Candle", "Closed")
+        print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {data["data"][0]["open"]}, High: {data["data"][0]["high"]}, Low: {data["data"][0]["low"]}, Close: {data["data"][0]["close"]}, Volume: {data["data"][0]["volume"]}")
+        print("-" * 60)
 
 def on_error(ws, error):
     print('⚠️ WebSocket Error:', error)

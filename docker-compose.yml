@@ -1,25 +1,37 @@
+
 services:
-  app:
+  Websocket_Candle:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: trading_system
-    command: python3 WebSocket_Real_time.py
-    restart: always
-    volumes:
-      - .:/app
-    working_dir: /app
+    container_name: Websocket_Candle
     environment:
-      - PYTHONUNBUFFERED=1
+      - SCRIPT_NAME=Websocket_Candle.py
       - MONGO_HOST=mongodb
       - REDIS_HOST=redis
+    volumes:
+      - .:/app
+    restart: always
+    depends_on:
+      - mongodb
+      - redis
+
+  Strategy_Engine:
+    build:
+      context: .
+    container_name: Strategy_Engine
+    environment:
+      - SCRIPT_NAME=Strategy_Engine.py
+      - MONGO_HOST=mongodb
+      - REDIS_HOST=redis
+    volumes:
+      - .:/app
+    restart: always
     depends_on:
       - mongodb
       - redis
 
   mongodb:
     image: mongo:noble
-
     container_name: mongodb
     restart: always
     ports:

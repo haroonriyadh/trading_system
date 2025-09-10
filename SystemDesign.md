@@ -1,11 +1,9 @@
 #Trading System Design
 ```mermaid
-graph TD
-    Websocket_Candle
-    Websocket_Candle --> Mongodb_Candle
-    Websocket_Candle --> Redis
-    
-    Stratery_Engine
-    Mongodb_Candle --> Stratery_Engine
-    
-
+flowchart TD
+    A[Websocket_Candle] --> B[Chaching]
+    A[Websocket_Candle] --> C[Mongodb]
+    C --> D[Strategy_Engine]
+    D --> C
+    C --> F[Open_trade]
+    B --> F
