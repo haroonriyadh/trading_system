@@ -32,10 +32,10 @@ def next_candle_time(start_time, timeframe_str, n_candles):
 def make_order_block(side, ts, entry, stop, frame, limit_to_end):
     return {
         "Side": side,
-        "Start_Time": ts if isinstance(ts,int) else datetime.fromtimestamp(ts/1000),
+        "Open_time": ts if isinstance(ts,datetime) else datetime.fromtimestamp(ts/1000),
         "Entry_Price": entry,
         "Stop_Loss": stop,
-        "End_Time": next_candle_time(ts, frame, limit_to_end),
+        "Close_time": next_candle_time(ts, frame, limit_to_end),
         "Mitigated" : 0
     }
 
@@ -46,10 +46,10 @@ def OrderBlock_Detector(df: np.ndarray, frame: str, limit_to_end: int) -> Union[
 
                 {
                 "Side": side,
-                "Start_Time": ts ,
+                "Open_time": ts ,
                 "Entry_Price": entry,
                 "Stop_Loss": stop,
-                "End_Time": Time To End Order Block
+                "Close_time": Time To End Order Block
             }
     """
     if len(df) < 6:

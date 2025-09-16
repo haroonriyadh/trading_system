@@ -5,3 +5,5 @@ pybit
 pymongo
 redis
 Requests
+matplotlib
+mplfinance

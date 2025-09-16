@@ -3,13 +3,19 @@ from pybit.unified_trading import HTTP, TradeHTTP
 from datetime import datetime
 import json
 import time
-
+import math
 
 # =========================
 # Load API credentials
 # =========================
 with open('authcreds.json') as f:
     creds = json.load(f)
+
+# =========================
+# Load Exchange_info
+# =========================
+with open('exchange_info.json') as f:
+    symbols_info = json.load(f)
 
 # =========================
 # Create session
@@ -19,7 +25,38 @@ session = HTTP(api_key=creds['Bybit']['key'], api_secret=creds['Bybit']['secret'
 # =========================
 # Helper Functions
 # =========================
-def place_market_order(symbol: str, side: str, qty: float, category: str):
+def format_price(symbol: str, price: float) -> str:
+    tick_size = float(symbols_info[symbol]["priceFilter"]["tickSize"])
+    decimals = int(round(-math.log10(tick_size)))
+    return f"{price:.{decimals}f}"
+
+def format_qty(symbol: str, qty: float, price: float) -> str:
+    f = symbols_info[symbol]["lotSizeFilter"]
+    step = float(f["qtyStep"])
+    min_q = float(f["minOrderQty"])
+    max_q = float(f["maxOrderQty"])
+    min_notional = float(f.get("minNotionalValue", 0))  # بعض الرموز قد لا تحتوي على هذا الحقل
+
+    # ضبط الكمية ضمن الحدود المسموحة
+    qty = max(min_q, min(max_q, math.ceil(qty / step) * step))
+
+    # التأكد من أن القيمة الاسمية >= minNotionalValue
+    if price > 0 and qty * price < min_notional:
+        qty = math.ceil(min_notional / price / step) * step
+        qty = min(qty, max_q)  # لا تتجاوز الحد الأقصى
+
+    # حساب عدد الخانات العشرية
+    decimals = max(0, int(-math.log10(step))) if step < 1 else 0
+
+    return f"{qty:.{decimals}f}"
+
+def min_qty(symbol: str) -> float:
+    return float(symbols_info[symbol]["lotSizeFilter"]["minOrderQty"])
+
+def min_notional(symbol: str) -> float:
+    return float(symbols_info[symbol]["lotSizeFilter"]["minNotionalValue"])
+
+def place_market_order(symbol: str, side: str, qty: float, category: str = "linear"):
     return session.place_order(
         category=category,
         symbol=symbol,
@@ -28,7 +65,7 @@ def place_market_order(symbol: str, side: str, qty: float, category: str):
         qty=qty
     )
 
-def place_limit_order(symbol: str, side: str, qty: float, price: float, category: str):
+def place_limit_order(symbol: str, side: str, qty: float, price: float, category: str = "linear"):
     return session.place_order(
         category=category,
         symbol=symbol,
@@ -39,7 +76,7 @@ def place_limit_order(symbol: str, side: str, qty: float, price: float, category
         timeInForce='GTC'
     )
 
-def set_take_profit(symbol: str, side: str, ordertype: str, tp_price: float, qty: float, category: str):
+def set_take_profit(symbol: str, side: str, ordertype: str, tp_price: float, qty: float, category: str = "linear"):
     return session.place_order(
         category=category,
         symbol=symbol,
@@ -50,7 +87,7 @@ def set_take_profit(symbol: str, side: str, ordertype: str, tp_price: float, qty
         qty=qty
     )
 
-def set_stop_loss(symbol: str, side: str,ordertype: str, sl_price: float, qty: float, category: str):
+def set_stop_loss(symbol: str, side: str,ordertype: str, sl_price: float, qty: float, category: str = "linear"):
     return session.place_order(
         category=category,
         symbol=symbol,
@@ -61,14 +98,14 @@ def set_stop_loss(symbol: str, side: str,ordertype: str, sl_price: float, qty: f
         qty=qty
     )
 
-def cancel_order(symbol: str, order_id: str, category: str):
+def cancel_order(symbol: str, order_id: str, category: str = "linear"):
     return session.cancel_order(
         category=category,
         symbol=symbol,
         orderId=order_id
     )
 
-def modify_pending_order(symbol: str, order_id: str, new_price: float, new_qty: float, category: str):
+def modify_pending_order(symbol: str, order_id: str, new_price: float, new_qty: float, category: str = "linear"):
     """
     Modify an existing pending (Limit) order.
     """
@@ -82,55 +119,63 @@ def modify_pending_order(symbol: str, order_id: str, new_price: float, new_qty: 
     if new_qty is not None:
         params["qty"] = new_qty
 
-    return session.replace_order(**params)
+    return session.amend_order(**params)
 
-def get_active_orders(symbol: str, category: str):
+def get_active_orders(symbol: str, category: str = "linear"):
     """
     Get all active orders for a symbol
     """
-    return session.get_active_orders(category=category, symbol=symbol)
+    return session.get_open_orders(category=category, symbol=symbol)
 
-# =========================
-# Example Workflow
-# =========================
-if __name__ == "__main__":
-    SYMBOL = 'BTCUSDT'
-    QTY = 0.001
-    MARKET_SIDE = 'Buy'
-    LIMIT_PRICE = 110000
-    TP_PRICE = 112000
-    SL_PRICE = 109000
-    CATEGORY = 'linear' 
-    start = time.perf_counter()
-    market_order = place_market_order(SYMBOL, MARKET_SIDE, QTY, CATEGORY)
-    print(f"=== Place Market Order === in {time.perf_counter()-start}")
+def get_order_status(symbol: str, order_id: str, category: str = "linear"):
+    return session.get_order_history(category=category, symbol=symbol, orderId=order_id)
 
-    print(market_order)
-    time.sleep(1)
+def get_wallet_balance(category: str = 'linear'):
+    """
+    Get wallet balance for a specific category (spot, linear, option, etc.)
+    """
+    return session.get_wallet_balance(category=category, accountType="UNIFIED")
 
-    print("=== Place Pending Limit Order ===")
-    limit_order = place_limit_order(SYMBOL, 'Buy', QTY, LIMIT_PRICE, CATEGORY)
-    print(limit_order)
-    time.sleep(1)
+def get_account_info():
+    """
+    Get account information including balances for all categories
+    """
+    return session.get_account_info()
 
-    print("=== Set Take Profit ===")
-    tp_order = set_take_profit(SYMBOL, 'Sell', 'Limit',TP_PRICE, QTY, CATEGORY)
-    print(tp_order)
-    time.sleep(1)
+def get_coin_balance(coin: str, category: str = 'linear'):
 
-    print("=== Set Stop Loss ===")
-    sl_order = set_stop_loss(SYMBOL, 'Sell', 'Limit', SL_PRICE, QTY, CATEGORY)
-    print(sl_order)
-    time.sleep(1)
+    """
+    Get balance for a specific coin in a specific category
+    """
+    balance_info = get_wallet_balance(category)
+    
+    if balance_info.get('result') and balance_info['result'].get('list'):
+        for account in balance_info['result']['list']:
+            # البحث في قائمة العملات داخل كل حساب
+            if account.get('coin'):
+                for coin_info in account.get('coin', []):
+                    if coin_info.get('coin') == coin:
+                        return coin_info
+    return None
 
-    print("=== Get Active Orders ===")
-    active_orders = get_active_orders(SYMBOL, CATEGORY)
-    print(active_orders)
+#print(get_coin_balance("USDT"))
 
-    if active_orders['result']:
-        first_order_id = active_orders['result'][0]['orderId']
-        print("=== Modify First Pending Order ===")
-        modified_order = modify_pending_order(SYMBOL, first_order_id, new_price=108500, new_qty=0.002, category=CATEGORY)
-        print(modified_order)
 
+Respone = {'availableToBorrow': '',
+            'bonus': '0',
+            'accruedInterest': '0', 
+            'availableToWithdraw': '', 
+            'totalOrderIM': '0', 
+            'equity': '46708.96299647', 
+            'totalPositionMM': '0', 
+            'usdValue': '46751.09448109', 
+            'unrealisedPnl': '0', 
+            'collateralSwitch': True, 
+            'spotHedgingQty': '0', 
+            'borrowAmount': '0.000000000000000000',
+            'totalPositionIM': '0', 
+            'walletBalance': '46708.96299647', 
+            'cumRealisedPnl': '-3291.03700353', 
+            'locked': '0', 
+            'marginCollateral': True, 'coin': 'USDT'}
 

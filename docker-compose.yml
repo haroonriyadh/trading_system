@@ -1,50 +1,50 @@
 
 services:
-  websocket_wandle:
-    build:
-      context: .
-    container_name: websocket_wandle
-    environment:
-      - SCRIPT_NAME=WebSocket_Candle.py
-      - MONGO_HOST=mongodb
-      - REDIS_HOST=redis
-    volumes:
-      - .:/app
-    restart: always
-    depends_on:
-      - mongodb
-      - redis
-
-  strategy_engine:
-    build:
-      context: .
-    container_name: strategy_engine
-    environment:
-      - SCRIPT_NAME=Strategy_Engine.py
-      - MONGO_HOST=mongodb
-      - REDIS_HOST=redis
-    volumes:
-      - .:/app
-    restart: always
-    depends_on:
-      - mongodb
-      - redis
-
-  mongodb:
-    image: mongo:noble
-    container_name: mongodb
-    restart: always
+  # خدمة MongoDB
+  mongo:
+    image: mongo:6
+    container_name: mongo
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-
-  redis:
-    image: redis:8-alpine
-    container_name: redis
     restart: always
+
+  # خدمة Redis
+  redis:
+    image: redis:7
+    container_name: redis
     ports:
       - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  # خدمة WebSocket_Candle
+  websocket_candle:
+    build: .
+    container_name: websocket_candle
+    command: python3 WebSocket_Candle.py
+    depends_on:
+      - redis
+      - mongo
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # خدمة Strategy_Engine
+  strategy_engine:
+    build: .
+    container_name: strategy_engine
+    command: python3 Strategy_Engine.py
+    depends_on:
+      - redis
+      - mongo
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
 
 volumes:
   mongo_data:
+  redis_data:

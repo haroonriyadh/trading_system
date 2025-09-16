@@ -1,16 +1,22 @@
+# استخدم صورة بايثون خفيفة
 FROM python:3.12-alpine
 
+# ضبط متغير البيئة لمنع .pyc و buffering
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# إنشاء مجلد التطبيق
 WORKDIR /app
 
 # نسخ ملفات المشروع
 COPY . /app
 
-# تثبيت مكتبات Python
-RUN python3 -m pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# تحديث pip وتثبيت المتطلبات
+RUN doas pip install --upgrade pip \
+    && doas pip install --no-cache-dir -r requirements.txt
 
-# يمكنك تحديد السكربت المراد تشغيله بواسطة متغير بيئة SCRIPT_NAME
-# إذا لم يتم تحديده، سيتم تشغيل WebSocket_Real_time.py افتراضيًا
-ENV SCRIPT_NAME=WebSocket_Real_time.py
+# فتح البورتات اللازمة إذا لزم الأمر (مثلاً للتواصل مع WebSocket أو Redis)
+EXPOSE 8000
 
-CMD ["sh", "-c", "python3 /app/$SCRIPT_NAME"]
+# الأمر الافتراضي لتشغيل البرنامج
+CMD ["python", "WebSocket_Candle.py"]

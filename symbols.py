@@ -1,1 +1,1 @@
-symbols = ["SOLUSDT","BNBUSDT"]
+symbols = ["ETHUSDT","BTCUSDT"]

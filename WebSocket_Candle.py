@@ -1,4 +1,4 @@
-from Database import db_candle,Redis
+from Database import db_candle,Redis,json_serialize
 from symbols import symbols
 import json
 import logging
@@ -9,64 +9,61 @@ import websocket
 logging.basicConfig(filename='logfile_multi_kline.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s %(message)s')
 
-interval = 5
+#Time Frames
+intervals = [1]
 
 # بناء قائمة المواضيع (topics) للاشتراك
-topics = [f"kline.{interval}.{symbol}" for symbol in symbols]
+topics = [f"kline.{interval}.{symbol}" for symbol in symbols for interval in intervals]
+
 
 def on_message(ws,message):
     data = json.loads(message)
     
     candle_obj = {
-        "Open_time": int(data["data"][0]["start"]),
+        "Open_time": datetime.fromtimestamp(int(data["data"][0]["start"])/1000),
         "Open": float(data["data"][0]["open"]),
         "High": float(data["data"][0]["high"]),
         "Low": float(data["data"][0]["low"]),
         "Close": float(data["data"][0]["close"]),
         "Volume": float(data["data"][0]["volume"]),
-        "Close_time": int(data["data"][0]["end"])
+        "Close_time": datetime.fromtimestamp(int(data["data"][0]["end"])/1000)
     }
 
-    
-    
-    # تحديث Redis
-    Redis.set(data['topic'].split(".")[-1], json.dumps(candle_obj))
+    # تحديث Redis أولاً
+    Redis.publish(f"{data['topic'].split(".")[-1]}_RealTime", json.dumps(json_serialize(candle_obj)))
 
     # حفظ الشمعة المكتملة في Mongo
     if data['data'][0]["confirm"]:
-        db_candle[data['topic'].split(".")[-1]].insert_one({"Open_Time": datetime.fromtimestamp(candle_obj["Open_time"]/1000),
-                                                            "Open" : candle_obj["Open"],
-                                                            "High" : candle_obj['High'],
-                                                            "Low" :  candle_obj["Low"],
-                                                            "Close": candle_obj["Close"],
-                                                            "Volume":candle_obj["Volume"]})
+        db_candle[data['topic'].split(".")[-1]].insert_one(candle_obj)
         
-        Redis.lpush(f"queue:{data['topic'].split(".")[-1]}_Close_Candle", "Closed")
-        print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {data["data"][0]["open"]}, High: {data["data"][0]["high"]}, Low: {data["data"][0]["low"]}, Close: {data["data"][0]["close"]}, Volume: {data["data"][0]["volume"]}")
-        print("-" * 60)
+        # إرسال إشعار إغلاق الشمعة
+        Redis.lpush(f"{data['topic'].split(".")[-1]}_Close_Candle", "Closed")
 
-def on_error(ws, error):
+    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {candle_obj["Open"]}, High: {candle_obj["High"]}, Low: {candle_obj["Low"]}, Close: {candle_obj["Close"]}, Volume: {candle_obj["Volume"]}")
+    print("-" * 60)
+
+
+def on_error(_ws, error):
     print('⚠️ WebSocket Error:', error)
 
 
-def on_close(ws, close_status_code, close_msg):
+def on_close(_ws, close_status_code, close_msg):
     print("### WebSocket Closed ###", close_status_code, close_msg)
 
 
 def on_open(ws):
-    print('✅ WebSocket Opened')
+    print(f'✅ WebSocket Opened in {datetime.now()}')
     sub_msg = {"op": "subscribe", "args": topics}
     ws.send(json.dumps(sub_msg))
     print(f"Subscribed to: {topics}")
 
 
-def on_pong(ws, *data):
-    print('pong received')
+def on_pong(_ws, *data):
+    print('pong received', datetime.now())
 
 
-def on_ping(ws, *data):
-    now = datetime.now()
-    print("ping received at", now.strftime("%H:%M:%S"))
+def on_ping(_ws, *data):
+    print("ping received at", datetime.now())
 
 
 def connWS():
@@ -80,7 +77,7 @@ def connWS():
         on_pong=on_pong,
         on_open=on_open
     )
-    ws.run_forever(ping_interval=20, ping_timeout=10)
+    ws.run_forever(ping_interval=60, ping_timeout=10)
 
 
 if __name__ == "__main__":
