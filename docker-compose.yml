@@ -2,7 +2,7 @@
 services:
   # خدمة MongoDB
   mongo:
-    image: mongo:6
+    image: mongo:6.0.26-nanoserver
     container_name: mongo
     ports:
       - "27017:27017"
@@ -12,7 +12,7 @@ services:
 
   # خدمة Redis
   redis:
-    image: redis:7
+    image: redis:alpine
     container_name: redis
     ports:
       - "6379:6379"
@@ -47,4 +47,3 @@ services:
 
 volumes:
   mongo_data:
-  redis_data:

@@ -11,6 +11,5 @@ RUN python3 -m pip install --upgrade pip \
 
 # يمكنك تحديد السكربت المراد تشغيله بواسطة متغير بيئة SCRIPT_NAME
 # إذا لم يتم تحديده، سيتم تشغيل WebSocket_Real_time.py افتراضيًا
-ENV SCRIPT_NAME=WebSocket_Real_time.py
 
-CMD ["sh", "-c", "python3 /app/$SCRIPT_NAME"]
+CMD ["python3" ,"WebSocket_Candle.py"]
