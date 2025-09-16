@@ -2,7 +2,7 @@
 services:
   # خدمة MongoDB
   mongo:
-    image: mongo:6.0.26-nanoserver
+    image: mongo:6.0.26
     container_name: mongo
     ports:
       - "27017:27017"
@@ -15,7 +15,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
-    restart: always
+    restart: unless-stopped
 
   # خدمة Redis
   redis:
@@ -31,7 +31,7 @@ services:
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
 
-    restart: always
+    restart: unless-stopped
 
   # خدمة WebSocket_Candle
   websocket_candle:
