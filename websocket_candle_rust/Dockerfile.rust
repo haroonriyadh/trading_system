@@ -1,11 +1,22 @@
-# Dockerfile.rust
-FROM rust:alpine
+# مرحلة البناء
+FROM rust:slim as builder
 
 WORKDIR /app
 
-COPY . .
+# نسخ ملفات Cargo أولاً للبناء السريع (cache layers)
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-# بناء المشروع في وضع release
+# بناء البرنامج في وضع release
 RUN cargo build --release
 
-CMD ["cargo run"]
+# مرحلة التشغيل
+FROM debian:bullseye-slim
+
+WORKDIR /app
+
+# نسخ binary فقط من مرحلة البناء
+COPY --from=builder /app/target/release/websocket_candle_rust /app/websocket_candle_rust
+
+# تشغيل binary مباشرة
+CMD ["./websocket_candle_rust"]
