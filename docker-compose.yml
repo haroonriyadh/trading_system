@@ -24,8 +24,8 @@ services:
   strategy_engine_python:
     build:
       context: ./  # جذر المشروع إذا Dockerfile موجود هنا
-      dockerfile: Dockerfile.strategy_python
-    container_name: strategy_engine_python
+      dockerfile: Dockerfile.python
+    container_name: strategy_engine
     command: python3 Strategy_Engine.py
     depends_on:
       - redis
@@ -39,7 +39,7 @@ services:
     build:
       context: ./websocket_candle_rust
       dockerfile: Dockerfile.rust
-    container_name: websocket_candle_rust
+    container_name: websocket_candle
     depends_on:
       - redis
       - mongo
