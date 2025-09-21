@@ -1,5 +1,5 @@
 # مرحلة البناء
-FROM rust:alpine
+FROM rust:alpine AS builder
 
 # تثبيت الحزم الضرورية
 RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base
@@ -12,13 +12,15 @@ COPY . .
 # بناء المشروع
 RUN cargo build --release
 
+# مرحلة runtime خفيفة
+FROM alpine:3.20
 
-# تثبيت فقط المكتبات الضرورية للتشغيل
+# تثبيت مكتبات ضرورية للتشغيل
 RUN apk add --no-cache openssl
 
 WORKDIR /app
 
-# نسخ الباينري فقط من مرحلة البناء
+# نسخ الباينري من مرحلة البناء
 COPY --from=builder /app/target/release/websocket_candle_rust .
 
 CMD ["./websocket_candle_rust"]
