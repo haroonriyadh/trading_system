@@ -1,21 +1,33 @@
+# Dockerfile.rust
 # مرحلة البناء
 FROM rust:alpine AS builder
 
-# تثبيت الحزم الضرورية
+# تثبيت الحزم الضرورية للبناء
 RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base
 
 WORKDIR /app
 
-# نسخ ملفات المشروع
+# نسخ ملفات إدارة الحزم أولًا (Cargo.toml و Cargo.lock)
+COPY Cargo.toml Cargo.lock ./
+
+# إنشاء مجلد src فارغ لتسريع الـ cache
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# بناء dependencies فقط (لن يحتاج لإعادة البناء إذا لم تتغير dependencies)
+RUN cargo build --release
+RUN rm -rf src
+
+# نسخ باقي ملفات المشروع
 COPY . .
 
-# بناء المشروع
+# بناء المشروع النهائي
 RUN cargo build --release
 
-# مرحلة runtime خفيفة
-FROM alpine:3.20
+# ----------------------
+# مرحلة runtime
+FROM alpine:latest
 
-# تثبيت مكتبات ضرورية للتشغيل
+# تثبيت المكتبات الضرورية فقط للتشغيل
 RUN apk add --no-cache openssl
 
 WORKDIR /app
