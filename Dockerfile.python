@@ -2,17 +2,17 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
-# نسخ ملفات المشروع
+# انسخ requirements.txt أولاً
+COPY requirements.txt ./
+
+# ثبّت المكتبات
+RUN python3 -m pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# انسخ باقي الملفات
 COPY Strategy_Engine.py ./
 COPY Database.py ./
 COPY Order_Block.py ./
 COPY telegram_bot.py ./
-COPY requirements.txt ./   # <-- نسخ ملف requirements.txt
 
-# تثبيت مكتبات Python
-RUN python3 -m pip install --upgrade pip \
-    && pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
-
-# يمكنك تحديد السكربت المراد تشغيله بواسطة متغير بيئة SCRIPT_NAME
-# إذا لم يتم تحديده، سيتم تشغيل Strategy_Engine.py افتراضيًا
 CMD ["python", "Strategy_Engine.py"]
