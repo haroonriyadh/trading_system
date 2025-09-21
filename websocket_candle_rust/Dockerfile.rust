@@ -1,27 +1,26 @@
-# Dockerfile.rust
-FROM rust:alpine AS builder
+# مرحلة البناء
+FROM rust:1.82-alpine AS builder
 
-# تثبيت المكتبات الضرورية
-RUN apk add --no-cache \
-    musl-dev \
-    pkgconfig \
-    openssl-dev \
-    build-base
+# تثبيت الحزم الضرورية
+RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base
 
 WORKDIR /app
 
 # نسخ ملفات المشروع
 COPY . .
 
-# بناء المشروع في وضع release
+# بناء المشروع
 RUN cargo build --release
 
-# المرحلة الثانية: صورة تشغيل خفيفة
-FROM alpine:latest
+# مرحلة التشغيل
+FROM alpine:3.20
+
+# تثبيت فقط المكتبات الضرورية للتشغيل
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
 # نسخ الباينري فقط من مرحلة البناء
-COPY --from=builder /app/target/release/websocket_candle_rust /app/
+COPY --from=builder /app/target/release/websocket_candle_rust .
 
 CMD ["./websocket_candle_rust"]
