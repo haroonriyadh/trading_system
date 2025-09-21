@@ -1,3 +1,4 @@
+version: "3.9"
 
 services:
   # خدمة MongoDB
@@ -8,13 +9,6 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    
-    environment:
-      - MONGO_HOST=mongo
-      - MONGO_PORT=27017
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - PYTHONUNBUFFERED=1
     restart: unless-stopped
 
   # خدمة Redis
@@ -24,37 +18,31 @@ services:
     ports:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
-    environment:
-      - MONGO_HOST=mongo
-      - MONGO_PORT=27017
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - PYTHONUNBUFFERED=1
-
     restart: unless-stopped
 
-  # خدمة WebSocket_Candle
-  websocket_candle:
-    build: .
-    container_name: websocket_candle
-    command: python3 WebSocket_Candle.py
-    depends_on:
-      - redis
-      - mongo
-    environment:
-      - PYTHONUNBUFFERED=1
-    restart: unless-stopped
-
-  # خدمة Strategy_Engine
-  strategy_engine:
-    build: .
-    container_name: strategy_engine
+  # خدمة Strategy_Engine (Python)
+  strategy_engine_python:
+    build:
+      context: ./  # جذر المشروع إذا Dockerfile موجود هنا
+      dockerfile: Dockerfile.strategy_python
+    container_name: strategy_engine_python
     command: python3 Strategy_Engine.py
     depends_on:
       - redis
       - mongo
     environment:
       - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # خدمة WebSocket_Candle (Rust)
+  websocket_candle_rust:
+    build:
+      context: ./websocket_candle_rust
+      dockerfile: Dockerfile.rust
+    container_name: websocket_candle_rust
+    depends_on:
+      - redis
+      - mongo
     restart: unless-stopped
 
 volumes:

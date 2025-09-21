@@ -10,6 +10,6 @@ rules = {'DOGEUSDT': [1e-05, 1.0, 1.0, 5.0, 1e-05], '1000SHIBUSDT': [1e-06, 1.0,
 
 for symbol in symbols:
     #print(type(db_candle[symbol].find({}).to_list()[0]))
-    #db_candle[symbol].delete_many({})
+    db_candle[symbol].delete_many({})
     db_OB[symbol].delete_many({})
 

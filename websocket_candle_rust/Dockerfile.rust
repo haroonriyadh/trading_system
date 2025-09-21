@@ -1,0 +1,11 @@
+# Dockerfile.rust
+FROM rust:alpine
+
+WORKDIR /app
+
+COPY . .
+
+# بناء المشروع في وضع release
+RUN cargo build --release
+
+CMD ["cargo run"]

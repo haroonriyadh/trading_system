@@ -1,85 +1,113 @@
-from Database import db_candle,Redis,json_serialize
-from symbols import symbols
+import asyncio
 import json
 import logging
 from datetime import datetime
-import websocket
+import traceback
+import websockets
+from Database import db_candle, json_serialize, init_redis
+from symbols import symbols
 
+logging.basicConfig(
+    filename='logfile_multi_kline_async.log',
+    level=logging.ERROR,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
 
-logging.basicConfig(filename='logfile_multi_kline.log', level=logging.ERROR,
-                    format='%(asctime)s %(levelname)s %(message)s')
+connected_clients = set()
 
-#Time Frames
+# Time Frames
 intervals = [1]
-
-# بناء قائمة المواضيع (topics) للاشتراك
 topics = [f"kline.{interval}.{symbol}" for symbol in symbols for interval in intervals]
 
+# -------------------------
+# Handle incoming WebSocket messages
+# -------------------------
+async def handle_message(message, Redis, db_candle):
+    try:
+        data = json.loads(message)
+        candle_obj = {
+            "symbol": data['topic'].split('.')[-1],
+            "Open_time": datetime.fromtimestamp(int(data["data"][0]["start"] / 1000)),
+            "Open": float(data["data"][0]["open"]),
+            "High": float(data["data"][0]["high"]),
+            "Low": float(data["data"][0]["low"]),
+            "Close": float(data["data"][0]["close"]),
+            "Volume": float(data["data"][0]["volume"]),
+            "Close_time": datetime.fromtimestamp(int(data["data"][0]["end"] / 1000))
+        }
 
-def on_message(ws,message):
-    data = json.loads(message)
-    
-    candle_obj = {
-        "Open_time": datetime.fromtimestamp(int(data["data"][0]["start"])/1000),
-        "Open": float(data["data"][0]["open"]),
-        "High": float(data["data"][0]["high"]),
-        "Low": float(data["data"][0]["low"]),
-        "Close": float(data["data"][0]["close"]),
-        "Volume": float(data["data"][0]["volume"]),
-        "Close_time": datetime.fromtimestamp(int(data["data"][0]["end"])/1000)
-    }
+        # إرسال البيانات لجميع عملاء React المتصلين
+        if connected_clients:
+            await asyncio.gather(*(client.send(json.dumps(candle_obj)) for client in connected_clients))
 
-    # تحديث Redis أولاً
-    Redis.publish(f"{data['topic'].split(".")[-1]}_RealTime", json.dumps(json_serialize(candle_obj)))
+        # نشر على Redis
+        await Redis.publish(f"{data['topic'].split('.')[-1]}_RealTime", json.dumps(json_serialize(candle_obj)))
 
-    # حفظ الشمعة المكتملة في Mongo
-    if data['data'][0]["confirm"]:
-        db_candle[data['topic'].split(".")[-1]].insert_one(candle_obj)
-        
-        # إرسال إشعار إغلاق الشمعة
-        Redis.lpush(f"{data['topic'].split(".")[-1]}_Close_Candle", "Closed")
+        # حفظ الشمعة المكتملة في MongoDB
+        if data['data'][0]["confirm"]:
+            await db_candle[data['topic'].split('.')[-1]].insert_one(candle_obj)
+            await Redis.lpush(f"{data['topic'].split('.')[-1]}_Close_Candle", "Closed")
 
-    print(f"{data['topic'].split(".")[-1]} | Time: {datetime.fromtimestamp(int(data["data"][0]["timestamp"])/1000)} ,Open: {candle_obj["Open"]}, High: {candle_obj["High"]}, Low: {candle_obj["Low"]}, Close: {candle_obj["Close"]}, Volume: {candle_obj["Volume"]}")
-    print("-" * 60)
+        # طباعة لمراقبة البيانات
+        print(f"{data['topic'].split('.')[-1]}| Time: {datetime.fromtimestamp(data['data'][0]['timestamp']/1000)} ,Open: {candle_obj['Open']}, High: {candle_obj['High']}, Low: {candle_obj['Low']}, Close: {candle_obj['Close']}, Volume: {candle_obj['Volume']}")
+        print("-" * 60)
+    except Exception:
+        print(traceback.format_exc())
+        logging.error(traceback.format_exc())
 
+# -------------------------
+# WebSocket server لإرسال البيانات لواجهة React
+# -------------------------
+async def react_websocket_server(websocket, path):
+    print(f"✅ React client connected: {websocket.remote_address}")
+    connected_clients.add(websocket)
+    try:
+        async for _ in websocket:  # React قد ترسل رسائل لكن نحن نهملها
+            pass
+    finally:
+        connected_clients.remove(websocket)
+        print(f"❌ React client disconnected: {websocket.remote_address}")
 
-def on_error(_ws, error):
-    print('⚠️ WebSocket Error:', error)
+# -------------------------
+# Bybit WebSocket client باستخدام websockets
+# -------------------------
+async def bybit_websocket_client(Redis, db_candle):
+    url = "wss://stream.bybit.com/v5/public/linear"
+    retry_delay = 5
 
+    while True:
+        try:
+            async with websockets.connect(url, ping_interval=30, ping_timeout=10) as ws:
+                print(f"✅ WebSocket Opened to Bybit at {datetime.now()}")
+                sub_msg = {"op": "subscribe", "args": topics}
+                await ws.send(json.dumps(sub_msg))
+                print(f"Subscribed to: {topics}")
 
-def on_close(_ws, close_status_code, close_msg):
-    print("### WebSocket Closed ###", close_status_code, close_msg)
+                async for message in ws:
+                    await handle_message(message, Redis, db_candle)
 
+        except Exception as e:
+            print("⚠️ Bybit WebSocket error:", e)
+            traceback.print_exc()
+            print(f"Retrying connection in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
 
-def on_open(ws):
-    print(f'✅ WebSocket Opened in {datetime.now()}')
-    sub_msg = {"op": "subscribe", "args": topics}
-    ws.send(json.dumps(sub_msg))
-    print(f"Subscribed to: {topics}")
+# -------------------------
+# Main async function
+# -------------------------
+async def main():
+    # تهيئة Redis async
+    Redis = await init_redis()
 
+    # تشغيل WebSocket server لواجهة React على port 9000
+    server = await websockets.serve(react_websocket_server, "localhost", 9000)
+    print("✅ React WebSocket Server running on ws://localhost:9000")
 
-def on_pong(_ws, *data):
-    print('pong received', datetime.now())
+    # تشغيل Bybit WebSocket client و React server بشكل متزامن
+    bybit_task = asyncio.create_task(bybit_websocket_client(Redis, db_candle))
 
-
-def on_ping(_ws, *data):
-    print("ping received at", datetime.now())
-
-
-def connWS():
-    ws = websocket.WebSocketApp(
-        "wss://stream.bybit.com/v5/public/linear",   # Spot
-        # إذا أردت العقود (Linear): "wss://stream.bybit.com/v5/public/linear"
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close,
-        on_ping=on_ping,
-        on_pong=on_pong,
-        on_open=on_open
-    )
-    ws.run_forever(ping_interval=60, ping_timeout=10)
-
+    # يبقي السيرفر شغال
+    await asyncio.gather(bybit_task, server.wait_closed())
 
 if __name__ == "__main__":
-    websocket.enableTrace(False)  # اجعلها True لو تريد تتبع كل الأحداث
-    connWS()
+    asyncio.run(main())

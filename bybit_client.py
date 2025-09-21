@@ -158,8 +158,9 @@ def get_coin_balance(coin: str, category: str = 'linear'):
                         return coin_info
     return None
 
-#print(get_coin_balance("USDT"))
-
+start = time.perf_counter()
+print(get_coin_balance("USDT"))
+print(time.perf_counter()-start)
 
 Respone = {'availableToBorrow': '',
             'bonus': '0',

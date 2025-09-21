@@ -3,7 +3,10 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 # نسخ ملفات المشروع
-COPY . /app
+COPY Strategy_Engine.py ./
+COPY Database.py ./
+COPY Order_Block.py ./
+COPY telegram_bot.py ./
 
 # تثبيت مكتبات Python
 RUN python3 -m pip install --upgrade pip \
@@ -12,4 +15,4 @@ RUN python3 -m pip install --upgrade pip \
 # يمكنك تحديد السكربت المراد تشغيله بواسطة متغير بيئة SCRIPT_NAME
 # إذا لم يتم تحديده، سيتم تشغيل WebSocket_Real_time.py افتراضيًا
 
-CMD ["python3" ,"WebSocket_Candle.py"]
+CMD ["python" ,"Strategy_Engine.py"]

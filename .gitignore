@@ -11,6 +11,16 @@ venv/
 *.egg
 *.pytest_cache/
 
+# --------------------
+# Rust compiled files
+#---------------------
+websocket_candle_rust/target/
+**/*.rlib
+**/*.exe
+**/*.dll
+**/*.dylib
+**/*.so
+
 # -----------------
 # Logs
 # -----------------
@@ -28,7 +38,11 @@ venv/
 *.sqlite3
 mongo/
 redis/
-
+*.sqlite
+*.db
+*.zip
+*.tar.gz
+*.bak
 # -----------------
 # VS Code / IDE
 # -----------------
@@ -41,3 +55,6 @@ redis/
 # -----------------
 .DS_Store
 Thumbs.db
+
+
+

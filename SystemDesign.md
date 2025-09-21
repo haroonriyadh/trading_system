@@ -1,167 +1,170 @@
-# System Design — Trading System (Full)
+# System Design — Trading System (2024, Updated)
 
-> وثيقة تصميم النظام الكاملة لبوت التداول (WebSocket ingestion → Strategy → Execution)
+> وثيقة تصميم النظام بعد التغييرات الأخيرة (WebSocket ingestion → Strategy → Execution)
 
 ---
 
-## نظرة عامة (High-level)
+## نظرة عامة (High-level Overview)
 
-```mermaid
-flowchart LR
-  Exchange[(Exchange WebSocket / REST)] -->|candles| WebSocket_Candle[WebSocket_Candle]
-  WebSocket_Candle --> Redis["Redis (queues, lists, pub/sub)"]
-  WebSocket_Candle --> MongoDB[(MongoDB - Candle Collections)]
-  Redis --> Strategy_Engine["Strategy_Engine (Order Block Detector)"]
-  Strategy_Engine --> Redis
-  Strategy_Engine --> DB_OB[(MongoDB - OrderBlock Collections)]
-  Redis --> Execution_Engine["Execution_Engine (Workers)"]
-  Execution_Engine --> BybitClient["bybit_client.py (HTTP API)"]
-  BybitClient --> Exchange
-  Execution_Engine --> DB_Orders[(MongoDB - Orders Collections)]
-  Execution_Engine --> Telegram[(Telegram Alerts)]
-  Logging[(Centralized Logging)] -->|logs| ELK[(ELK / Loki / Grafana)]
-  Metrics[(Prometheus)] --> Grafana[(Grafana Dashboards)]
+نظام التداول الآلي المحدث يتكون من ثلاث مكونات رئيسية:
+
+### 1. Data Ingestion Layer (طبقة استقبال البيانات)
+- **WebSocket Connections**: اتصالات مباشرة مع منصات التداول
+- **Real-time Market Data**: بيانات السوق اللحظية (الأسعار، الأحجام، الطلبات)
+- **Data Normalization**: توحيد البيانات من مصادر متعددة
+
+### 2. Strategy Engine (محرك الاستراتيجيات)
+- **Technical Analysis Module**: تحليل فني للبيانات
+- **Signal Generation**: توليد إشارات البيع والشراء
+- **Risk Management**: إدارة المخاطر والتحكم في الخسائر
+- **Portfolio Management**: إدارة المحفظة والتوزيع
+
+### 3. Execution Layer (طبقة التنفيذ)
+- **Order Management System**: نظام إدارة الأوامر
+- **Broker Integration**: التكامل مع منصات الوساطة
+- **Trade Execution**: تنفيذ العمليات التجارية
+- **Position Tracking**: تتبع المراكز المفتوحة
+
+---
+
+## تدفق البيانات (Data Flow)
+
+```
+Market Data (WebSocket) → Strategy Engine → Execution Engine
+    ↓                           ↓                ↓
+Data Storage              Signal Storage    Trade Storage
+```
+
+### تفصيل التدفق:
+
+1. **استقبال البيانات**: WebSocket يستقبل بيانات السوق اللحظية
+2. **معالجة الاستراتيجية**: تحليل البيانات وتوليد الإشارات
+3. **تنفيذ العمليات**: تنفيذ أوامر البيع والشراء بناءً على الإشارات
+
+---
+
+## Architecture Components (مكونات المعمارية)
+
+### Data Ingestion Service
+```python
+class WebSocketDataIngestion:
+    - connect_to_exchanges()
+    - normalize_market_data()
+    - publish_to_strategy_engine()
+    - handle_reconnection()
+```
+
+### Strategy Service
+```python
+class StrategyEngine:
+    - analyze_market_data()
+    - generate_trading_signals()
+    - apply_risk_management()
+    - send_to_execution()
+```
+
+### Execution Service
+```python
+class ExecutionEngine:
+    - receive_trading_signals()
+    - validate_orders()
+    - execute_trades()
+    - update_positions()
 ```
 
 ---
 
-## مكوّنات النظام وتوضيح مسؤولياتها
+## تقنيات البناء (Technology Stack)
 
-* **WebSocket\_Candle.py (Ingestion)**
+### Backend
+- **Programming Language**: Python 3.11+
+- **WebSocket Library**: websockets / aiohttp
+- **Data Processing**: pandas, numpy
+- **Database**: PostgreSQL (للتخزين) + Redis (للكاش)
 
-  * يتصل بـ WebSocket لـ Bybit ويشترك بمواضيع `kline`.
-  * عند استقبال رسالة: يدفع آخر شمعة (RealTime) إلى Redis (LPUSH) ويحفظ الشموع المؤكدة في MongoDB.
-  * يرسل إشعار قفل الشمعة عبر List/Queue (مثل `SYMBOL_Close_Candle`).
+### Communication
+- **Message Queue**: Redis Pub/Sub أو Apache Kafka
+- **API**: FastAPI للواجهات البرمجية
+- **Monitoring**: Prometheus + Grafana
 
-* **Redis**
-
-  * يُستخدم كـ: قوائم (LPUSH/BRPOP) لتنظيم إشعارات الأحداث (Close candle, queues)، cache لآخر شمعة، و pub/sub محتمل.
-  * يتم استخدام مفاتيح مثل `BTCUSDT_RealTime`, `BTCUSDT_Close_Candle`, `queue:BTCUSDT_Last_Order_Block`.
-
-* **MongoDB**
-
-  * تخزين شموع مُؤكَّدة في مجموعات لكل رمز.
-  * تخزين Order Blocks (db\_OB).
-  * تخزين الأوامر المرسلة/النتائج (db\_Orders).
-
-* **Strategy\_Engine.py**
-
-  * ينتظر إشارة إغلاق الشمعة (BRPOP على `SYMBOL_Close_Candle`).
-  * يقرأ آخر N شموع من MongoDB، ينفذ `OrderBlock_Detector`، ويضغط نتائج OB إلى MongoDB وRedis، مع إرسال تنبيه Telegram.
-
-* **Execution\_Engine.py**
-
-  * Workers لكل رمز: BRPOP على قوائم إشعار Order Block أو Queue خاصة.
-  * يحسب المخاطرة، يحسب الكمية والسعر باستخدام `bybit_client` helpers، ويرسل أوامر Limit/Modify.
-  * يخزن نتائج الأوامر في MongoDB ويريح إشعارات للخطوات اللاحقة.
-
-* **bybit\_client.py**
-
-  * طبقة تجريد لطلبات HTTP إلى Bybit: place\_order, amend\_order, get\_wallet\_balance, get\_order\_history.
-  * يحوي صيغ لتنسيق السعر/الكمية حسب `exchange_info.json`.
-
-* **Alerts & Notifications**
-
-  * Telegram bot لإرسال تنبيهات عند اكتشاف Order Block أو عند تنفيذ أمر.
-
-* **Observability**
-
-  * Centralized logs (file logs → ELK / Loki)
-  * Metrics: Prometheus metrics (workers alive, queue length, processing latency, failed API calls). Dashboards on Grafana.
-  * Alerts: عند ارتفاع طول الطوابير، فشل WebSocket، تكرار أخطاء API، أو خسارة رصيد.
-
-* **Infra / Deployment**
-
-  * كل خدمة داخل Docker container.
-  * تشغيل على Kubernetes (preferred) أو docker-compose for small setups.
-  * تصاميم ReplicaSets: WebSocket\_Candle (1 primary + hot-standby), Strategy & Execution scalable horizontally (HPA based on queue length/CPU).
-  * Secrets stored in Vault / K8s secrets (API keys, DB creds).
+### Infrastructure
+- **Containerization**: Docker
+- **Orchestration**: Docker Compose أو Kubernetes
+- **Cloud Provider**: AWS/GCP (اختياري)
 
 ---
 
-## تتابع الحدث (Sequence) - عندما تُغلق شمعة
+## Security & Risk Management (الأمان وإدارة المخاطر)
 
-```mermaid
-sequenceDiagram
-  Exchange->>WebSocket_Candle: new kline
-  WebSocket_Candle->>Redis: LPUSH SYMBOL_RealTime
-  WebSocket_Candle->>MongoDB: insert candle (if confirm)
-  WebSocket_Candle->>Redis: LPUSH SYMBOL_Close_Candle (when confirmed)
-  Strategy_Engine->>Redis: BRPOP SYMBOL_Close_Candle
-  Strategy_Engine->>MongoDB: fetch last N candles
-  Strategy_Engine->>Strategy_Engine: detect Order Block
-  Strategy_Engine->>MongoDB: insert OrderBlock
-  Strategy_Engine->>Redis: LPUSH queue:SYMBOL_Last_Order_Block
-  Execution_Engine->>Redis: BRPOP queue:SYMBOL_Last_Order_Block
-  Execution_Engine->>bybit_client: place_limit_order / amend_order
-  bybit_client->>Exchange: HTTP request
-  bybit_client->>Execution_Engine: order response
-  Execution_Engine->>MongoDB: insert order
-  Execution_Engine->>Telegram: send message
+### Security Measures
+- **API Key Management**: تشفير وحماية مفاتيح API
+- **Rate Limiting**: تحديد معدل الطلبات
+- **Data Encryption**: تشفير البيانات الحساسة
+
+### Risk Controls
+- **Position Limits**: حدود المراكز المالية
+- **Stop Loss**: وقف الخسائر التلقائي
+- **Daily Limits**: حدود يومية للتداول
+- **Drawdown Protection**: حماية من الخسائر الكبيرة
+
+---
+
+## Deployment Architecture (معمارية النشر)
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  Data Ingestion │    │  Strategy Engine│    │ Execution Engine│
+│   (WebSocket)   │───▶│  (Analysis &    │───▶│  (Order Mgmt)   │
+│                 │    │   Signals)      │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Market Data   │    │   Signal Data   │    │   Trade Data    │
+│    Database     │    │    Database     │    │    Database     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ---
 
-## نقاط القوة، القابلية للتوسع واعتبارات الفشل
+## Performance Considerations (اعتبارات الأداء)
 
-* **Scalability**
+### Latency Optimization
+- **Direct Market Access**: اتصال مباشر بالأسواق
+- **In-Memory Processing**: معالجة البيانات في الذاكرة
+- **Asynchronous Operations**: عمليات غير متزامنة
 
-  * Execution & Strategy قابلان للتمدد أفقياً. استخدم autoscaling based on Redis queue length.
-  * MongoDB: read-replicas لسرعة القراءة عند استعلام الشموع.
-  * Redis clustered لو احتجت high throughput.
-
-* **Fault tolerance**
-
-  * WebSocket\_Candle: إعادة محاولة الاتصال مع backoff، hot-standby instance تعمل على نفس الـ topics (مع coordination لمنع التكرار: leader election أو stream partitioning).
-  * Ensure idempotency عند إدخال DB: وضع فهرس فريد على `Open_time` لكل مجموعة لتجنّب التكرار.
-  * Durable queues: استخدام RPUSH/BRPOP مع acknowledgement pattern (أو استخدام stream مثل Redis Streams أو Kafka إذا احتجت garantied-processing).
-
-* **Consistency**
-
-  * بالنسبة لقراءة الشموع، Strategy يجب أن يعتمد على MongoDB لأن Redis قد يحوي بيانات غير مكتملة.
+### Scalability
+- **Horizontal Scaling**: توسع أفقي للخدمات
+- **Load Balancing**: توزيع الأحمال
+- **Microservices**: معمارية الخدمات المصغرة
 
 ---
 
-## مقاييس ومراقبة مُقترحة (Key Metrics)
+## Monitoring & Logging (المراقبة والتسجيل)
 
-* WebSocket: اتصال ناجح/فاشل، متوسط دوبلاغ (latency) بتلقي الرسائل.
-* Redis: طول قوائم `queue:*`, معدل BRPOP success, متوسط زمن الانتظار.
-* Execution: عدد الأوامر المرسلة / فشلها، average placement latency، تعديل الأوامر.
-* Strategy: عدد Order Blocks المكتشفة يومياً، false positives ratio (من تجربة المستخدم).
-* Financial: Exposure, P\&L per-symbol, walletBalance.
+### System Monitoring
+- **Health Checks**: فحص صحة النظام
+- **Performance Metrics**: مقاييس الأداء
+- **Alert System**: نظام التنبيهات
 
----
-
-## إجراءات تشغيلية وRunbook مختصر
-
-* إذا فقد WebSocket الاتصال → تحقّق من الشبكة وابدأ خدمة WebSocket جديدة. راجع logs (websocket\_trace).
-* إذا تراكمت رسائل في `queue:...` لأكثر من X دقيقة → زيادة عدد عُمال Execution أو تعطيل مؤقت لإيقاف تنفيذ أوامر حتى التحقيق.
-* فشل في وضع أمر (API error) → أعد المحاولة مع backoff، وإذا استمر أرسل تنبيه Telegram وارجع السجل.
+### Trading Monitoring
+- **P&L Tracking**: تتبع الأرباح والخسائر
+- **Trade Analytics**: تحليل العمليات التجارية
+- **Risk Metrics**: مقاييس المخاطر
 
 ---
 
-## تحسينات مستقبلية (Roadmap)
+## التحديثات الأخيرة (Recent Updates)
 
-1. استبدال Redis lists بـ Redis Streams أو Kafka لمعالجة مضمونة (exactly-once / at-least-once) ومقاييس أفضل.
-2. إقران وحدة محاكاة (paper trading) لتجربة الاستراتيجية بدون رأس مال حقيقي.
-3. إضافة feature-store/feature-cache لتسريع حسابات الاستراتيجيات التاريخية.
-4. استخدام CI/CD (GitHub Actions) لنشر تلقائي مع خطوات اختبار (unit/integration), و blue/green deploy.
+### التغييرات المُطبقة:
+1. **WebSocket Integration**: تكامل مباشر مع منصات التداول
+2. **Strategy Modularization**: تقسيم الاستراتيجيات إلى وحدات منفصلة
+3. **Execution Optimization**: تحسين سرعة تنفيذ العمليات
+4. **Risk Management Enhancement**: تحسين أنظمة إدارة المخاطر
 
----
-
-## ملفات مرجعية داخل المشروع
-
-* WebSocket\_Candle.py — ingestion, writes to Redis & MongoDB.
-* Strategy\_Engine.py — listener for Close\_Candle, runs OrderBlock\_Detector.
-* Execution\_Engine.py — BRPOP workers, place/amend orders via bybit\_client.
-* bybit\_client.py — API wrapper, formatting helpers.
-
----
-
-إذا رغبت، أقدر أضيف:
-
-* مخطط نشر (K8s manifests / docker-compose) جاهز للنشر.
-* مخطط تفصيلي لــ Redis Stream أو Kafka migration.
-* لوحة Grafana مبدئية مع queries للمقاييس.
-
-*نهاية الوثيقة.*
+### الخطوات القادمة:
+- [ ] تطبيق Machine Learning للتنبؤ
+- [ ] إضافة المزيد من منصات التداول
+- [ ] تحسين واجهة المراقبة
+- [ ] إضافة Backtesting المتقدم
