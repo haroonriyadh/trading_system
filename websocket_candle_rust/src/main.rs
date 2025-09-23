@@ -14,7 +14,7 @@ async fn main() {
     let db_candle = Arc::new(mongo_client.database("CandleStick_data"));
 
     // ------------------- Redis -------------------
-    let redis_client = redis::Client::open("redis://redis:6379").unwrap();
+    let redis_client = redis::Client::open("redis://redis:6379/").unwrap();
     
     // تعريف Redis connection
     let redis_conn = redis_client.get_async_connection().await.unwrap();

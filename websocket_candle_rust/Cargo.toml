@@ -12,4 +12,6 @@ redis = { version = "0.24", features = ["tokio-comp"] }
 mongodb = { version = "2.7", features = ["tokio-runtime"] }
 anyhow = "1.0"
 futures-util = "0.3"
+openssl = { version = "0.10", features = ["vendored"] }
+
 
