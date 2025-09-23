@@ -14,5 +14,6 @@ COPY Strategy_Engine.py ./
 COPY Database.py ./
 COPY Order_Block.py ./
 COPY telegram_bot.py ./
+COPY symbols.py ./
 
 CMD ["python", "Strategy_Engine.py"]
