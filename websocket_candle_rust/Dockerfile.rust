@@ -1,43 +1,31 @@
-# Dockerfile.rust
-# مرحلة البناء
-FROM rust:alpine AS builder
-
-# تثبيت الحزم الضرورية للبناء
-RUN apk add --no-cache \
-    musl-dev \
-    openssl-dev \
-    pkgconfig \
-    build-base \
-    perl
+# ---- مرحلة البناء ----
+FROM rust:latest-slim AS builder
 
 WORKDIR /app
 
-# نسخ ملفات إدارة الحزم أولًا (Cargo.toml و Cargo.lock)
+# نسخ ملفات المشروع
 COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-# إنشاء مجلد src فارغ لتسريع الـ cache
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+# تثبيت أدوات النظام المطلوبة
+RUN apt-get update && \
+    apt-get install -y pkg-config libssl-dev build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# بناء dependencies فقط
-RUN cargo build --release
-RUN rm -rf src
-
-# نسخ باقي ملفات المشروع
-COPY . .
-
-# بناء المشروع النهائي
+# بناء المشروع
 RUN cargo build --release
 
-# ----------------------
-# مرحلة runtime
-FROM alpine:latest
-
-# تثبيت المكتبات الضرورية فقط للتشغيل
-RUN apk add --no-cache openssl
+# ---- مرحلة التشغيل ----
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# نسخ الباينري من مرحلة البناء
-COPY --from=builder /app/target/release/websocket_candle_rust .
+# نسخ التنفيذ من مرحلة البناء
+COPY --from=builder /app/target/release/websocket_candle_rust ./websocket_candle_rust
+
+# تثبيت مكتبات التشغيل المطلوبة
+RUN apt-get update && apt-get install -y libssl3 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 CMD ["./websocket_candle_rust"]
+    

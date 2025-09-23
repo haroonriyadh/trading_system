@@ -6,3 +6,4 @@ pymongo
 redis
 Requests
 motor
+aiohttp
