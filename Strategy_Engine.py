@@ -3,10 +3,8 @@ import asyncio
 import datetime
 import json
 import time
-import threading
 from types import NoneType
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
 from Database import (
     db_candle, db_OB, db_Orders,init_redis,
     Nearest_OB_Long, Nearest_OB_Short,
@@ -66,67 +64,66 @@ async def Signals(symbol):
 
     async for msg in pubsub.listen():
 
-            data =  msg["data"]
-            if isinstance(data, bytes):
-                data = json_deserialize(json.loads(data))
+        if isinstance(msg["data"], str):
+            data = json_deserialize(json.loads(msg["data"]))
 
+            # جلب أقرب OB محفوظ في Redis
+            NearestLong = await Redis.get(f"{symbol}_Nearest_Order_Block_Long")
+            NearestShort = await Redis.get(f"{symbol}_Nearest_Order_Block_Short")
 
-                # جلب أقرب OB محفوظ في Redis
-                NearestLong = await Redis.get(f"{symbol}_Nearest_Order_Block_Long")
-                NearestShort = await Redis.get(f"{symbol}_Nearest_Order_Block_Short")
-
-                if isinstance(NearestLong,bytes):
-                    NearestLong = json_deserialize(json.loads(NearestLong))
-                    if data["Close"] <= NearestLong["Entry_Price"]:
-                        print(f"{symbol} Price has Mitigate Order Block Long at {NearestLong['Entry_Price']}")
+            if isinstance(NearestLong,str):
+                NearestLong = json_deserialize(json.loads(NearestLong))
+                if data["Close"] <= NearestLong["Entry_Price"]:
+                    print(f"{symbol} Price has Mitigate Bullish Order Block at {NearestLong['Entry_Price']}")
+                    await db_OB[symbol].update_many(
+                        {"Open_time": NearestLong["Open_time"]},
+                        {"$set": {"Close_time": data["Open_time"], "Mitigated": 1}}
+                    )
+                    
+                    nearestlong = await Nearest_OB_Long(symbol, data["Close"])
+                    if isinstance(nearestlong,dict):
                         # استخدم $set عند التحديث
-                        await db_OB[symbol].update_many(
-                            {"Open_time": NearestLong["Open_time"]},
-                            {"$set": {"Close_time": data["Open_time"], "Mitigated": 1}}
+                        await Redis.set(f"{symbol}_Nearest_Order_Block_Long", json.dumps(json_serialize(nearestlong)))
+                        await send_telegram_message(
+                            f"Price {symbol} has Mitigate Bullish Order Block at {NearestLong['Entry_Price']}\n\n"
+                            f"The Nearest Bullish Order Block is:\nTime : {nearestlong['Open_time']}\n"
+                            f"Entry_Price : {nearestlong['Entry_Price']}\nStop_Loss : {nearestlong['Stop_Loss']}"
                         )
-                        nearestlong = await Nearest_OB_Long(symbol, data["Close"])
-                        if isinstance(nearestlong,dict):
-                            await Redis.set(f"{symbol}_Nearest_Order_Block_Long", json.dumps(json_serialize(nearestlong)))
-                            await send_telegram_message(
-                                f"Price {symbol} has Mitigate Order Block Long at {NearestLong['Entry_Price']}\n\n"
-                                f"The Nearest Order Block Long is:\nTime : {nearestlong['Open_time']}\n"
-                                f"Entry_Price : {nearestlong['Entry_Price']}\nStop_Loss : {nearestlong['Stop_Loss']}"
-                            )
 
 
-                        elif isinstance(nearestlong,NoneType):
-                            await Redis.delete(f"{symbol}_Nearest_Order_Block_Long")
-                            await send_telegram_message(
-                                f"Price {symbol} has Mitigate Order Block Long at {NearestLong['Entry_Price']}\n\n"
-                                f"There is no Order Block Long below the Current Price."
-                            )
-
-
-
-                if isinstance(NearestShort,bytes):
-                    NearestShort = json_deserialize(json.loads(NearestShort))
-                    if data["Close"] >= NearestShort["Entry_Price"]:                
-                        print(f"[{symbol}] Price has Mitigate Order Block Short at {NearestShort['Entry_Price']}")
-                        await db_OB[symbol].update_many(
-                            {"Open_time": NearestShort["Open_time"]},
-                            {"$set": {"Close_time": data["Open_time"], "Mitigated": 1}}
+                    elif isinstance(nearestlong,NoneType):
+                        await Redis.delete(f"{symbol}_Nearest_Order_Block_Long")
+                        await send_telegram_message(
+                            f"Price {symbol} has Mitigate Bullish Order Block at {NearestLong['Entry_Price']}\n\n"
+                            f"There Is No Bullish Order Block Below The Current Price."
                         )
-                        
-                        nearestshort = await Nearest_OB_Short(symbol, data["Close"])
-                        if isinstance(nearestshort,dict):
-                            await Redis.set(f"{symbol}_Nearest_Order_Block_Short", json.dumps(json_serialize(nearestshort)))
-                            await send_telegram_message(
-                                f"Price {symbol} has Mitigate Order Block Short at {NearestShort['Entry_Price']}\n\n"
-                                f"The Nearest Order Block Short is:\nTime : {nearestshort['Open_time']}\n"
-                                f"Entry_Price : {nearestshort['Entry_Price']}\nStop_Loss : {nearestshort['Stop_Loss']}"
-                            )
-                        
-                        elif isinstance(nearestshort,NoneType):
-                            await Redis.delete(f"{symbol}_Nearest_Order_Block_Short")
-                            await send_telegram_message(
-                                f"Price {symbol} has Mitigate Order Block Short at {NearestShort['Entry_Price']}\n\n"
-                                f"There is no Order Block Short above the Current Price."
-                            )
+
+
+
+            if isinstance(NearestShort,str):
+                NearestShort = json_deserialize(json.loads(NearestShort))
+                if data["Close"] >= NearestShort["Entry_Price"]:                
+                    print(f"[{symbol}] Price has Mitigate Bearish Order Block at {NearestShort['Entry_Price']}")
+                    await db_OB[symbol].update_many(
+                        {"Open_time": NearestShort["Open_time"]},
+                        {"$set": {"Close_time": data["Open_time"], "Mitigated": 1}}
+                    )
+                    
+                    nearestshort = await Nearest_OB_Short(symbol, data["Close"])
+                    if isinstance(nearestshort,dict):
+                        await Redis.set(f"{symbol}_Nearest_Order_Block_Short", json.dumps(json_serialize(nearestshort)))
+                        await send_telegram_message(
+                            f"Price {symbol} has Mitigate Bearish Order Block at {NearestShort['Entry_Price']}\n\n"
+                            f"The Nearest Bearish Order Block is:\nTime : {nearestshort['Open_time']}\n"
+                            f"Entry_Price : {nearestshort['Entry_Price']}\nStop_Loss : {nearestshort['Stop_Loss']}"
+                        )
+                    
+                    elif isinstance(nearestshort,NoneType):
+                        await Redis.delete(f"{symbol}_Nearest_Order_Block_Short")
+                        await send_telegram_message(
+                            f"Price {symbol} has Mitigate Bearish Order Block at {NearestShort['Entry_Price']}\n\n"
+                            f"There Is No Bearish Order Block Above The Current Price."
+                        )
 
 
 

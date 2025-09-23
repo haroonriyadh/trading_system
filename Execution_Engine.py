@@ -28,7 +28,7 @@ def TP_short(buy_price, sl, fees, RRR):
 
 last_order_in_symbols = {symbol : {"Long" : {"Order_id" : None,"Price" : None} ,"Short" : {"Order_id" : None,"Price" : None}} for symbol in symbols}
 
-def worker(symbol):
+async def worker(symbol):
 
     while True:
         # انتظار إكتشاف الاوردر بلوك الجديد
