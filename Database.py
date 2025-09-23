@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 # -------------------
 # MongoDB Async
 # -------------------
-MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+MONGO_HOST = os.getenv("MONGO_HOST", "mongo")
 MONGO_PORT = int(os.getenv("MONGO_PORT", 27017))
 
 mongo_client = AsyncIOMotorClient(f"mongodb://{MONGO_HOST}:{MONGO_PORT}/")
@@ -20,7 +20,7 @@ db_Orders = mongo_client['Open_Orders']
 # -------------------
 # Redis Async
 # -------------------
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 Redis = None

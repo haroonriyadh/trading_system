@@ -9,12 +9,12 @@ use std::sync::Arc;
 #[tokio::main]
 async fn main() {
     // ------------------- MongoDB -------------------
-    let client_options = ClientOptions::parse("mongodb://localhost:27017").await.unwrap();
+    let client_options = ClientOptions::parse("mongodb://mongo:27017").await.unwrap();
     let mongo_client = Client::with_options(client_options).unwrap();
     let db_candle = Arc::new(mongo_client.database("CandleStick_data"));
 
     // ------------------- Redis -------------------
-    let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap();
+    let redis_client = redis::Client::open("redis://redis:6379").unwrap();
     
     // تعريف Redis connection
     let redis_conn = redis_client.get_async_connection().await.unwrap();
