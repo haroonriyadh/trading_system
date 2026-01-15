@@ -14,7 +14,7 @@ venv/
 # --------------------
 # Rust compiled files
 #---------------------
-websocket_candle_rust/target/
+data_feed/target/
 **/*.rlib
 **/*.exe
 **/*.dll
