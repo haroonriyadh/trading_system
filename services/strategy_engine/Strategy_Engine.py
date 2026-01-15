@@ -1,33 +1,30 @@
-from ast import Await
 import asyncio
 import datetime
 import json
 import time
 from types import NoneType
 import numpy as np
-from Database import (
-    db_candle, db_OB, db_Orders,init_redis,
-    Nearest_OB_Long, Nearest_OB_Short,
-    json_deserialize, json_serialize
-)
 from Order_Block import OrderBlock_Detector
 from symbols import symbols
 from telegram_bot import send_telegram_message
 import traceback
+from Database import (
+    db_candle,
+    db_OB, 
+    db_Orders,
+    init_redis,
+    Get_Candlestick,
+    Nearest_OB_Long,
+    Nearest_OB_Short,
+    json_deserialize,
+    json_serialize
+)
+
 
 
 
 # حالة أخيرة لكل symbol لمنع التكرار
 last_ob_in_symbols = {symbol: None for symbol in symbols}
-
-
-async def Get_CandelStick(symbol: str, limit: int) -> np.ndarray:
-    cursor = await db_candle[symbol].aggregate(
-        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
-    ).to_list(limit)
-
-    return np.array([[c.get(col) for col in ["Open_time", "Open", "High", "Low", "Close"]] for c in cursor], dtype=object)[::-1]
-
 
 async def detect_order_block(symbol):
     
@@ -72,13 +69,17 @@ async def Signals(symbol):
             NearestShort = await Redis.get(f"{symbol}_Nearest_Order_Block_Short")
 
             if isinstance(NearestLong,str):
+                
                 NearestLong = json_deserialize(json.loads(NearestLong))
+
                 if data["Close"] <= NearestLong["Entry_Price"]:
+                    await Redis.lpush(f"{symbol}_Open_Long_Position", json.dumps(json_serialize(NearestLong)))
                     print(f"{symbol} Price has Mitigate Bullish Order Block at {NearestLong['Entry_Price']}")
                     await db_OB[symbol].update_many(
                         {"Open_time": NearestLong["Open_time"]},
                         {"$set": {"Close_time": data["Open_time"], "Mitigated": 1}}
                     )
+
                     
                     nearestlong = await Nearest_OB_Long(symbol, data["Close"])
                     if isinstance(nearestlong,dict):
@@ -101,8 +102,11 @@ async def Signals(symbol):
 
 
             if isinstance(NearestShort,str):
+                
                 NearestShort = json_deserialize(json.loads(NearestShort))
-                if data["Close"] >= NearestShort["Entry_Price"]:                
+                
+                if data["Close"] >= NearestShort["Entry_Price"]:   
+                    await Redis.lpush(f"{symbol}_Open_Short_Position", json.dumps(json_serialize(NearestShort)))             
                     print(f"[{symbol}] Price has Mitigate Bearish Order Block at {NearestShort['Entry_Price']}")
                     await db_OB[symbol].update_many(
                         {"Open_time": NearestShort["Open_time"]},
@@ -126,9 +130,6 @@ async def Signals(symbol):
                         )
 
 
-
-
-
 async def worker_wrapper(fn, symbol):
     """يغلف الworker بحيث يعيد التشغيل عند وقوع أي استثناء (سجل الخطأ ثم أعد المحاولة)."""
     while True:
@@ -142,8 +143,21 @@ async def worker_wrapper(fn, symbol):
 async def main():
     tasks = []
     for sym in symbols:
-        tasks.append(asyncio.create_task(worker_wrapper(detect_order_block,sym)))
-        tasks.append(asyncio.create_task(worker_wrapper(Signals, sym)))
+        tasks.append(
+            asyncio.create_task(
+                worker_wrapper(
+                    detect_order_block,sym
+                )
+            )
+        )
+
+        tasks.append(
+            asyncio.create_task(
+                worker_wrapper(
+                    Signals, sym
+                )
+            )
+        )
 
     await asyncio.gather(*tasks)
 

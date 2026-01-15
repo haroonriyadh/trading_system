@@ -25,10 +25,10 @@ session = HTTP(api_key=creds['Bybit']['key'], api_secret=creds['Bybit']['secret'
 # =========================
 # Helper Functions
 # =========================
-def format_price(symbol: str, price: float) -> str:
+def format_price(symbol: str, price: float) -> float:
     tick_size = float(symbols_info[symbol]["priceFilter"]["tickSize"])
     decimals = int(round(-math.log10(tick_size)))
-    return f"{price:.{decimals}f}"
+    return float(f"{price:.{decimals}f}")
 
 def format_qty(symbol: str, qty: float, price: float) -> str:
     f = symbols_info[symbol]["lotSizeFilter"]
@@ -48,7 +48,7 @@ def format_qty(symbol: str, qty: float, price: float) -> str:
     # حساب عدد الخانات العشرية
     decimals = max(0, int(-math.log10(step))) if step < 1 else 0
 
-    return f"{qty:.{decimals}f}"
+    return float(f"{qty:.{decimals}f}")
 
 def min_qty(symbol: str) -> float:
     return float(symbols_info[symbol]["lotSizeFilter"]["minOrderQty"])
@@ -56,12 +56,16 @@ def min_qty(symbol: str) -> float:
 def min_notional(symbol: str) -> float:
     return float(symbols_info[symbol]["lotSizeFilter"]["minNotionalValue"])
 
-def place_market_order(symbol: str, side: str, qty: float, category: str = "linear"):
+def place_market_order(symbol: str, side: str, qty: float, take_profit: float, stop_loss: float , category: str = "linear"):
     return session.place_order(
         category=category,
         symbol=symbol,
         orderType='Market',
         side=side,
+        takeProfit=take_profit,    # أخذ الربح
+        stopLoss=stop_loss,      # وقف الخسارة
+        tpTriggerBy="LastPrice",
+        slTriggerBy="LastPrice",
         qty=qty
     )
 
@@ -158,25 +162,26 @@ def get_coin_balance(coin: str, category: str = 'linear'):
                         return coin_info
     return None
 
-start = time.perf_counter()
-print(get_coin_balance("USDT"))
-print(time.perf_counter()-start)
+if __name__ == "__main__":
+    start = time.perf_counter()
+    print(get_coin_balance("USDT"))
+    print(time.perf_counter()-start)
 
-Respone = {'availableToBorrow': '',
-            'bonus': '0',
-            'accruedInterest': '0', 
-            'availableToWithdraw': '', 
-            'totalOrderIM': '0', 
-            'equity': '46708.96299647', 
-            'totalPositionMM': '0', 
-            'usdValue': '46751.09448109', 
-            'unrealisedPnl': '0', 
-            'collateralSwitch': True, 
-            'spotHedgingQty': '0', 
-            'borrowAmount': '0.000000000000000000',
-            'totalPositionIM': '0', 
-            'walletBalance': '46708.96299647', 
-            'cumRealisedPnl': '-3291.03700353', 
-            'locked': '0', 
-            'marginCollateral': True, 'coin': 'USDT'}
+    Respone = {'availableToBorrow': '',
+                'bonus': '0',
+                'accruedInterest': '0', 
+                'availableToWithdraw': '', 
+                'totalOrderIM': '0', 
+                'equity': '46708.96299647', 
+                'totalPositionMM': '0', 
+                'usdValue': '46751.09448109', 
+                'unrealisedPnl': '0', 
+                'collateralSwitch': True, 
+                'spotHedgingQty': '0', 
+                'borrowAmount': '0.000000000000000000',
+                'totalPositionIM': '0', 
+                'walletBalance': '46708.96299647', 
+                'cumRealisedPnl': '-3291.03700353', 
+                'locked': '0', 
+                'marginCollateral': True, 'coin': 'USDT'}
 

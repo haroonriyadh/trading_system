@@ -1,1 +1,0 @@
-symbols = ["ETHUSDT","BTCUSDT"]

@@ -1,9 +1,0 @@
-APScheduler
-numpy
-pandas
-pybit
-pymongo
-redis
-Requests
-motor
-aiohttp
