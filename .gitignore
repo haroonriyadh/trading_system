@@ -58,3 +58,25 @@ Thumbs.db
 
 
 
+# Rust build files
+target/
+Cargo.lock
+*.rlib
+*.d
+*.exe
+*.so
+*.dll
+
+# Python build / cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Config sensitive files
+authcreds.json
+config.env
+
+# Docker artifacts
+*.docker
+*.tar
