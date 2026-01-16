@@ -2,18 +2,15 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
-# انسخ requirements.txt أولاً
-COPY requirements.txt ./
-
-# ثبّت المكتبات
+# Install requirements first (for caching)
+COPY services/monitoring_engine/requirements.txt ./
 RUN python3 -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# انسخ باقي الملفات
-COPY Strategy_Engine.py ./
-COPY Database.py ./
-COPY Order_Block.py ./
-COPY telegram_bot.py ./
-COPY symbols.py ./
+# Copy shared module
+COPY shared/ ./shared/
 
-CMD ["python", "Strategy_Engine.py"]
+# Copy service files
+COPY services/monitoring_engine/*.py ./
+
+CMD ["python3", "Position_Monitor.py"]

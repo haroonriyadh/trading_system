@@ -1,9 +1,9 @@
 import asyncio
 import json
-from symbols import symbols
+from shared.symbols_loader import symbols
 from telegram_bot import send_telegram_message
 import traceback
-from Database import (
+from shared.database import (
     db_Orders,
     init_redis,
     json_deserialize

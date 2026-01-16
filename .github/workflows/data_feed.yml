@@ -1,9 +1,11 @@
-name: Deploy to AWS
+name: Deploy Data Feed
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "services/data_feed/**"
 
 jobs:
   deploy:
@@ -11,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup SSH
         run: |
@@ -20,20 +22,11 @@ jobs:
           chmod 600 ~/.ssh/server_key.pem
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy on Server
+      - name: Deploy Data Feed Service
         run: |
           ssh -i ~/.ssh/server_key.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            cd ~/Trading_system
-            echo "Resetting repo..."
-            git reset --hard HEAD
-            git clean -fd
-            echo "Pulling latest code..."
+            cd ~/trading_system
             git pull origin main
-            echo "Stopping and removing all containers..."
-            docker stop $(docker ps -aq) || true
-            docker rm -f $(docker ps -aq) || true
-            echo "Removing all images..."
-            docker rmi -f $(docker images -q) || true
-            echo "Rebuilding and restarting containers..."
-            docker-compose up -d --build
+            cd infra
+            docker-compose --profile data_feed up -d --build data_feed
           EOF

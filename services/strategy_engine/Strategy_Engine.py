@@ -5,10 +5,10 @@ import time
 from types import NoneType
 import numpy as np
 from Order_Block import OrderBlock_Detector
-from symbols import symbols
+from shared.symbols_loader import symbols
 from telegram_bot import send_telegram_message
 import traceback
-from Database import (
+from shared.database import (
     db_candle,
     db_OB, 
     db_Orders,

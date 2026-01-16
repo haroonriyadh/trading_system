@@ -2,9 +2,9 @@ import asyncio
 import numpy as np
 import traceback
 import json
-from symbols import symbols
+from shared.symbols_loader import symbols
 from datetime import datetime
-from Database import (
+from shared.database import (
     db_candle,
     db_indicitors,
     init_redis,

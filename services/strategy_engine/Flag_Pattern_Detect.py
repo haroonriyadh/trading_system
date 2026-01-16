@@ -3,8 +3,8 @@ import numpy as np
 import traceback
 import json
 from datetime import datetime
-from symbols import symbols
-from Database import (
+from shared.symbols_loader import symbols
+from shared.database import (
     db_candle,
     db_indicitors,
     init_redis,

@@ -2,18 +2,15 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
-# انسخ requirements.txt أولاً
-COPY requirements.txt ./
-
-# ثبّت المكتبات
+# Install requirements first (for caching)
+COPY services/indicator_engine/requirements.txt ./
 RUN python3 -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# انسخ باقي الملفات
-COPY Strategy_Engine.py ./
-COPY Database.py ./
-COPY Order_Block.py ./
-COPY telegram_bot.py ./
-COPY symbols.py ./
+# Copy shared module (includes symbols.json and symbols_loader.py)
+COPY shared/ ./shared/
 
-CMD ["python", "Strategy_Engine.py"]
+# Copy service files
+COPY services/indicator_engine/*.py ./
+
+CMD ["python3", "indicitor_Highs_Low.py"]

@@ -34,6 +34,9 @@ WORKDIR /app
 # نسخ الباينري المكتمل statically
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/websocket_candle_rust .
 
+# نسخ المجلد المشترك (shared) للوصول إلى symbols.json
+COPY shared/ ./shared/
+
 # نسخ شهادات SSL اللازمة (optional إذا كنت تتصل بـ HTTPS)
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 

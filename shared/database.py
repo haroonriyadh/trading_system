@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 import redis.asyncio as redis
+import numpy as np
 from motor.motor_asyncio import AsyncIOMotorClient
 
 

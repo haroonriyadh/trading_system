@@ -1,7 +1,10 @@
 version: "3.9"
 
 services:
-  # خدمة MongoDB
+  # =============================================================================
+  # Infrastructure Services
+  # =============================================================================
+
   mongo:
     image: mongo:6.0.26
     container_name: mongo
@@ -10,8 +13,9 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    networks:
+      - trading_network
 
-  # خدمة Redis
   redis:
     image: redis:alpine
     container_name: redis
@@ -19,31 +23,127 @@ services:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
+    networks:
+      - trading_network
 
-  # خدمة Strategy_Engine (Python)
-  strategy_engine_python:
+  # =============================================================================
+  # Application Services
+  # =============================================================================
+
+  data_feed:
     build:
-      context: ./  # جذر المشروع إذا Dockerfile موجود هنا
-      dockerfile: Dockerfile.python
-    container_name: strategy_engine
-    command: python3 Strategy_Engine.py
+      context: ../services/data_feed
+      dockerfile: Dockerfile
+    container_name: data_feed
     depends_on:
       - redis
       - mongo
     environment:
-      - PYTHONUNBUFFERED=1
+      - MONGO_HOST=mongo
+      - REDIS_HOST=redis
     restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - data_feed
+      - all
 
-  # خدمة WebSocket_Candle (Rust)
-  websocket_candle_rust:
+  indicator_engine:
     build:
-      context: ./websocket_candle_rust
-      dockerfile: Dockerfile.rust
-    container_name: websocket_candle
+      context: ..
+      dockerfile: services/indicator_engine/Dockerfile
+    container_name: indicator_engine
     depends_on:
       - redis
       - mongo
+    environment:
+      - MONGO_HOST=mongo
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
     restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - indicator
+      - all
+
+  strategy_engine:
+    build:
+      context: ..
+      dockerfile: services/strategy_engine/Dockerfile
+    container_name: strategy_engine
+    depends_on:
+      - redis
+      - mongo
+    environment:
+      - MONGO_HOST=mongo
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - strategy
+      - all
+
+  execution_engine:
+    build:
+      context: ..
+      dockerfile: services/execution_engine/Dockerfile
+    container_name: execution_engine
+    depends_on:
+      - redis
+      - mongo
+    environment:
+      - MONGO_HOST=mongo
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - execution
+      - all
+
+  telegram_engine:
+    build:
+      context: ..
+      dockerfile: services/telegram_engine/Dockerfile
+    container_name: telegram_engine
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - telegram
+      - all
+
+  monitoring_engine:
+    build:
+      context: ..
+      dockerfile: services/monitoring_engine/Dockerfile
+    container_name: monitoring_engine
+    depends_on:
+      - redis
+      - mongo
+    environment:
+      - MONGO_HOST=mongo
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - trading_network
+    profiles:
+      - monitor
+      - all
+
+networks:
+  trading_network:
+    driver: bridge
 
 volumes:
   mongo_data:

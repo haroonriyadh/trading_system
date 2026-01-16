@@ -99,9 +99,8 @@ async fn main() {
 
     let (tx, _) = broadcast::channel::<String>(10000); 
 
-    // 3. Dynamic Symbol Fetching (The Fix for Naming Errors)
-    info!("🌍 Fetching TOP 100 Active Symbols from Bybit API...");
-    let symbols = fetch_top_100_symbols().await;
+    info!("🌍 Loading symbols from shared/symbols.json...");
+    let symbols = load_symbols_from_json().await;
     
     if symbols.is_empty() {
         error!("❌ Failed to fetch symbols. Please check internet connection.");
@@ -181,35 +180,26 @@ async fn main() {
 //  3. Dynamic Symbol Fetcher
 // =================================================================================
 
-async fn fetch_top_100_symbols() -> Vec<String> {
-    let client = reqwest::Client::new();
-    let url = "https://api.bybit.com/v5/market/tickers?category=linear";
+async fn load_symbols_from_json() -> Vec<String> {
+    let path = std::path::Path::new("shared/symbols.json");
+    if !path.exists() {
+        error!("❌ symbols.json not found at {:?}", path);
+        return vec!["BTCUSDT".to_string()];
+    }
 
-    match client.get(url).send().await {
-        Ok(resp) => {
-            match resp.json::<TickerResponse>().await {
-                Ok(data) => {
-                    let mut items = data.result.list;
-                    // تصفية USDT فقط
-                    items.retain(|item| item.symbol.ends_with("USDT"));
-                    // الترتيب حسب الحجم
-                    items.sort_by(|a, b| {
-                        let vol_a = a.turnover.parse::<f64>().unwrap_or(0.0);
-                        let vol_b = b.turnover.parse::<f64>().unwrap_or(0.0);
-                        vol_b.partial_cmp(&vol_a).unwrap()
-                    });
-                    // أخذ أول 100
-                    items.into_iter().take(100).map(|item| item.symbol).collect()
-                }
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            match serde_json::from_str::<Vec<String>>(&content) {
+                Ok(symbols) => symbols,
                 Err(e) => {
-                    error!("JSON Parse Error: {:?}", e);
-                    Vec::new()
+                    error!("❌ Failed to parse symbols.json: {:?}", e);
+                    vec!["BTCUSDT".to_string()]
                 }
             }
         }
         Err(e) => {
-            error!("API Request Error: {:?}", e);
-            Vec::new()
+            error!("❌ Failed to read symbols.json: {:?}", e);
+            vec!["BTCUSDT".to_string()]
         }
     }
 }

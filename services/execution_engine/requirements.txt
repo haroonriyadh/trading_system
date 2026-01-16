@@ -1,0 +1,5 @@
+numpy
+motor
+redis
+python-dotenv
+pybit

@@ -1,0 +1,33 @@
+name: Deploy Execution Engine
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "services/execution_engine/**"
+            - "shared/**"
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup SSH
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/server_key.pem
+                  chmod 600 ~/.ssh/server_key.pem
+                  ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Deploy Execution Engine
+              run: |
+                  ssh -i ~/.ssh/server_key.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+                    cd ~/trading_system
+                    git pull origin main
+                    cd infra
+                    docker-compose --profile execution up -d --build execution_engine
+                  EOF

@@ -1,41 +1,16 @@
-# ========================
-# Stage 1: Build
-# ========================
-FROM rust:latest AS builder
-
-# تثبيت الأدوات المطلوبة للبناء باستخدام musl
-RUN apt-get update && apt-get install -y \
-    musl-tools \
-    build-essential \
-    pkg-config \
-    curl \
-    ca-certificates \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# إعداد Rust للربط مع musl
-RUN rustup target add x86_64-unknown-linux-musl
+FROM python:3.12-alpine
 
 WORKDIR /app
 
-# نسخ ملفات المشروع
-COPY . .
+# Install requirements first (for caching)
+COPY services/telegram_engine/requirements.txt ./
+RUN python3 -m pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# بناء الباينري statically
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# Copy shared module
+COPY shared/ ./shared/
 
-# ========================
-# Stage 2: Runtime (حاوية صغيرة جدًا)
-# ========================
-FROM scratch
+# Copy service files
+COPY services/telegram_engine/*.py ./
 
-WORKDIR /app
-
-# نسخ الباينري المكتمل statically
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/websocket_candle_rust .
-
-# نسخ شهادات SSL اللازمة (optional إذا كنت تتصل بـ HTTPS)
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# تشغيل الباينري
-CMD ["./websocket_candle_rust"]
+CMD ["python3", "telegram_bot.py"]
