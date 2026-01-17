@@ -88,13 +88,20 @@ async fn main() {
 
     info!("🚀 System Initialization Started (Single Connection Mode)...");
 
-    // 2. Connect DBs (Using 127.0.0.1 for Termux stability)
-    let client_options = ClientOptions::parse("mongodb://127.0.0.1:27017").await.unwrap();
+    // 2. Connect DBs (Dynamic hosts for Docker compatibility)
+    let mongo_host = std::env::var("MONGO_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    info!("🔌 Connecting to Mongo at {} and Redis at {}...", mongo_host, redis_host);
+
+    let mongo_url = format!("mongodb://{}:27017", mongo_host);
+    let client_options = ClientOptions::parse(&mongo_url).await.unwrap();
     let mongo_client = Client::with_options(client_options).unwrap();
     let db_candle = mongo_client.database("CandleStick_data");
     let db_indicitors = mongo_client.database("Indicitors");
 
-    let redis_client = redis::Client::open("redis://127.0.0.1:6379/").unwrap();
+    let redis_url = format!("redis://{}:6379/", redis_host);
+    let redis_client = redis::Client::open(redis_url).unwrap();
     let redis_conn = redis_client.get_multiplexed_async_connection().await.unwrap();
 
     let (tx, _) = broadcast::channel::<String>(10000); 
