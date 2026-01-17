@@ -3,42 +3,43 @@
 # ========================
 FROM rust:latest AS builder
 
-# تثبيت الأدوات المطلوبة للبناء باستخدام musl
+# تثبيت الأدوات المطلوبة للبناء
 RUN apt-get update && apt-get install -y \
-    musl-tools \
     build-essential \
     pkg-config \
-    curl \
-    ca-certificates \
-    git \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# إعداد Rust للربط مع musl
-RUN rustup target add x86_64-unknown-linux-musl
+WORKDIR /app
+
+# نسخ ملفات المشروع (Context is project root)
+COPY services/data_feed/ ./services/data_feed/
+COPY shared/ ./shared/
+
+# بناء الباينري (Dynamic linking with glibc)
+WORKDIR /app/services/data_feed
+RUN cargo build --release
+
+# ========================
+# Stage 2: Runtime (Ubuntu)
+# ========================
+# استخدام Ubuntu 24.04 كما هو في السيرفر
+FROM ubuntu:24.04
+
+# تثبيت المكتبات المطلوبة للتشغيل
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    openssl \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# نسخ ملفات المشروع
-COPY . .
-
-# بناء الباينري statically
-RUN cargo build --release --target x86_64-unknown-linux-musl
-
-# ========================
-# Stage 2: Runtime (حاوية صغيرة جدًا)
-# ========================
-FROM scratch
-
-WORKDIR /app
-
-# نسخ الباينري المكتمل statically
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/websocket_candle_rust .
+# نسخ الباينري المكتمل
+COPY --from=builder /app/services/data_feed/target/release/websocket_candle_rust .
 
 # نسخ المجلد المشترك (shared) للوصول إلى symbols.json
 COPY shared/ ./shared/
-
-# نسخ شهادات SSL اللازمة (optional إذا كنت تتصل بـ HTTPS)
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # تشغيل الباينري
 CMD ["./websocket_candle_rust"]
