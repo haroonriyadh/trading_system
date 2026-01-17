@@ -113,6 +113,8 @@ services:
     container_name: telegram_engine
     depends_on:
       - redis
+    env_file:
+      - ../config.env
     environment:
       - REDIS_HOST=redis
       - PYTHONUNBUFFERED=1
