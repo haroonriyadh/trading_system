@@ -13,4 +13,4 @@ COPY shared/ ./shared/
 # Copy service files
 COPY services/strategy_engine/*.py ./
 
-CMD ["python3", "Strategy_Engine.py"]
+CMD ["python3", "Flag_Pattern_Strategy.py"]

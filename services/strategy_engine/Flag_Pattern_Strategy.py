@@ -7,6 +7,8 @@ from shared.symbols_loader import symbols
 from shared.database import (
     db_candle,
     db_indicitors,
+    Get_CandleStick,
+    Get_HL_Points,
     init_redis,
     json_serialize,
     json_deserialize
@@ -44,9 +46,9 @@ def FlagPatternConditions(
         df:np.ndarray,
         i:int,
         HL_raw:np.ndarray,
-        Flag_Range:int = 360,
+        Flag_Range:int = 300,
         FlagRatioMin:float = 0.50,
-        FlagRatioMax:float = 6
+        FlagRatioMax:float = 10
 ):
     Pattern = {
         "Side" : 0,
@@ -61,34 +63,27 @@ def FlagPatternConditions(
         "correlation":0
     }
 
-    if len(HL_raw) <= 5:
+    if len(HL_raw) < 5:
         return Pattern
     
-    # Map timestamps to indices
-    time_to_idx = {int(t): idx for idx, t in enumerate(df[:, OPEN_TIME])}
+    # Map datatime to indices
+    time_to_idx = {t: idx for idx, t in enumerate(df[:, OPEN_TIME])}
     
-    HL_idx = []
-    for h in HL_raw:
-        t = int(h[0])
-        if t in time_to_idx:
-            HL_idx.append([time_to_idx[t], h[1], h[2]])
-    
-    if len(HL_idx) < 5:
+    HL_idx = [[time_to_idx[h[0]], h[1], h[2]] for h in HL_raw if h[0] in time_to_idx]
+    HL = np.array(HL_idx)
+
+    if len(HL_idx) < 5 or i-HL[0,0] < 50:
         return Pattern
         
-    HL = np.array(HL_idx)
     
     index = -5
     Range_Candle = i - HL[index,0]
 
     while Flag_Range > Range_Candle:
         if Range_Candle < 5:
-            if abs(index - 1) < len(HL):
-                index -= 1
-                Range_Candle = i - HL[index,0]
-                continue
-            else:
-                break
+            index -= 1
+            Range_Candle = i - HL[index,0]
+            continue
         
         HP = HL[index:, 1].max() # High Price
         LP = HL[index:, 1].min() # Low Price
@@ -117,11 +112,11 @@ def FlagPatternConditions(
             
             if df[i, CLOSE] > upper_long[-1] and df[i-1, CLOSE] < upper_long_shift_1[-1]:
                 Pattern["Side"] = "Bull"
-                Pattern["StartIndex"] = Start_Index
-                Pattern["EndIndex"] = i+1
+                Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
+                Pattern["EndIndex"] = df[i, OPEN_TIME]
                 Pattern["TakeProfit"] = float(df[HI, HIGH])
                 Pattern["StopLoss"] = float(df[HI:i+1, LOW].min())
-                Pattern["HeadIndex"] = HI
+                Pattern["HeadIndex"] = df[HI, OPEN_TIME]
                 return Pattern
 
         # Validate Bear Flag 
@@ -135,11 +130,11 @@ def FlagPatternConditions(
             
             if df[i, CLOSE] < lower_short[-1] and df[i-1, CLOSE] > lower_short_shift_1[-1]:
                 Pattern["Side"] = "Bear"
-                Pattern["StartIndex"] = Start_Index
-                Pattern["EndIndex"] = i+1
+                Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
+                Pattern["EndIndex"] = df[i, OPEN_TIME]
                 Pattern["TakeProfit"] = float(df[LI, LOW])
-                Pattern["StopLoss"] = float(df[LI:i+1, HIGH].max())
-                Pattern["HeadIndex"] = LI
+                Pattern["StopLoss"] = float(df[LI:i, HIGH].max())
+                Pattern["HeadIndex"] = df[LI, OPEN_TIME]
                 return Pattern
 
         if abs(index - 1) < len(HL):
@@ -150,49 +145,19 @@ def FlagPatternConditions(
 
     return Pattern
 
-async def Get_Candlestick(symbol: str, limit: int = 500) -> np.ndarray:
-    try:
-        cursor = await db_candle[symbol].find({}, {"_id": 0}).sort("Open_time", -1).limit(limit).to_list(limit)
-        if not cursor:
-            return np.array([])
-        data = []
-        for c in cursor:
-            # Convert datetime to millisecond timestamp
-            dt = c.get("Open_time")
-            ts = int(dt.timestamp() * 1000)
-            data.append([ts, float(c.get("Open")), float(c.get("High")), float(c.get("Low")), float(c.get("Close"))])
-        return np.array(data)[::-1]
-    except Exception as e:
-        print(f"Error in Get_Candlestick for {symbol}: {e}")
-        return np.array([])
-
-async def Get_HL_Points(symbol: str, limit: int = 100) -> np.ndarray:
-    try:
-        results = await db_indicitors[symbol].find({}, {"_id": 0}).sort("Open_time", -1).limit(limit).to_list(limit)
-        if not results:
-            return np.array([])
-        data = []
-        for h in results:
-            dt = h.get("Open_time")
-            ts = int(dt.timestamp() * 1000)
-            data.append([ts, float(h["Price"]), int(h["Type"])])
-        return np.array(data)[::-1]
-    except Exception as e:
-        print(f"Error in Get_HL_Points for {symbol}: {e}")
-        return np.array([])
 
 async def Flag_Pattern_Worker(symbol: str):
     Redis = await init_redis()
     pubsub = Redis.pubsub()
-    await pubsub.subscribe(f"{symbol}_HL_Updated")
+    await pubsub.subscribe(f"{symbol}_Close_Candle")
     
     print(f"[{symbol}] Flag Pattern Worker started.")
     
     async for message in pubsub.listen():
         if message['type'] == 'message':
             try:
-                df = await Get_Candlestick(symbol)
-                HL = await Get_HL_Points(symbol)
+                df = await Get_CandleStick(symbol,limit=310)
+                HL = await Get_HL_Points(symbol,limit=100)
                 
                 if len(df) < 50 or len(HL) < 5:
                     continue
@@ -204,11 +169,14 @@ async def Flag_Pattern_Worker(symbol: str):
                     signal = {
                         "symbol": symbol,
                         "side": pattern["Side"],
-                        "entry": float(df[i, CLOSE]),
+                        "start_index": pattern["StartIndex"],
+                        "end_index": pattern["EndIndex"],
+                        "head_index": pattern["HeadIndex"],
+                        "entry": df[i, CLOSE],
                         "stop_loss": pattern["StopLoss"],
                         "take_profit": pattern["TakeProfit"],
                         "pattern": "Flag Pattern",
-                        "timestamp": int(df[i, OPEN_TIME])
+                        "timestamp": df[i, OPEN_TIME]
                     }
                     await Redis.publish(f"{symbol}_Trade_Signal", json.dumps(signal))
                     print(f"🔥 [{symbol}] FLAG PATTERN DETECTED: {pattern['Side']} | Entry: {signal['entry']}")

@@ -43,6 +43,14 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     return np.array([[c.get(col) for col in ["Open_time", "Open", "High", "Low", "Close"]] for c in cursor], dtype=object)[::-1]
 
 
+async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
+    cursor = await db_indicitors[symbol].aggregate(
+        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
+    ).to_list(limit)
+    
+    return np.array([[c.get(col) for col in ["Open_time", "Price", "Type"]] for c in cursor], dtype=object)[::-1]
+
+
 
 async def Nearest_OB_Long(symbol: str, current_price: float) -> dict | None:
     # 1️⃣ إلغاء أي Order Block شرائي فوق السعر الحالي

@@ -6,14 +6,14 @@ from datetime import datetime
 import os
 
 
-def create_candlestick_chart(symbol, candles_data, order_block=None, save_path="chart.png"):
+def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path="chart.png"):
     """
-    إنشاء مخطط شموع يابانية مع تمييز Order Block
+    إنشاء مخطط شموع يابانية مع تمييز النماذج الفنية (Flag Pattern / Order Block)
     
     Args:
         symbol: رمز العملة
         candles_data: بيانات الشموع (numpy array)
-        order_block: بيانات Order Block (dict)
+        pattern_data: بيانات النموذج (dict) مثل Flag Pattern أو Order Block
         save_path: مسار حفظ الصورة
     """
     try:
@@ -43,6 +43,19 @@ def create_candlestick_chart(symbol, candles_data, order_block=None, save_path="
             textcolor='white'
         )
         
+        # إعداد خطوط إضافية (tlines) للرسم إذا كان هناك نموذج
+        tlines = []
+        
+        if pattern_data and pattern_data.get('pattern') == 'Flag Pattern':
+            # استخراج النقاط لرسم القناة (Flag)
+            # نفترض أن الاستراتيجية ترسل نقاط القناة أو سنرسم خطوط بسيطة بناءً على Start/End/Head
+            
+            # ملاحظة: mplfinance يحتاج تواريخ للرسم بدقة، هنا سنرسم خطوط بسيطة 
+            # أو يمكننا استخدام alines لرسم خطوط بين نقاط زمنية محددة
+            
+            # سنقوم فقط برسم مستويات الدخول ووقف الخسارة والهدف كخطوط أفقية للتبسيط والدقة
+            pass
+
         # إعداد المؤامرة
         fig, axes = mpf.plot(
             df,
@@ -51,18 +64,32 @@ def create_candlestick_chart(symbol, candles_data, order_block=None, save_path="
             volume=True,
             figsize=(12, 8),
             returnfig=True,
-            title=f'{symbol} - Order Block Detection',
+            title=f'{symbol} - {pattern_data.get("pattern", "Analysis")}' if pattern_data else f'{symbol} - Analysis',
             tight_layout=True
         )
         
-        # إضافة Order Block إذا كان موجوداً
-        if order_block:
-            ax = axes[0]
+        ax = axes[0]
+
+        if pattern_data:
+            # رسم مستويات الصفقة (Entry, SL, TP)
+            entry = pattern_data.get('entry')
+            stop = pattern_data.get('stop_loss')
+            tp = pattern_data.get('take_profit')
+            side = pattern_data.get('side')
             
-            # تحديد موقع Order Block
-            ob_time = pd.to_datetime(order_block['Start_Time'], unit='ms')
-            ob_entry = order_block['Entry_Price']
-            ob_stop = order_block['Stop_Loss']
+            if entry:
+                color = '#00ff00' if side == 'Bull' or side == 'Long' else '#ff0000'
+                ax.axhline(y=entry, color='#ffffff', linestyle='--', alpha=0.8, linewidth=1.5, label='Entry')
+            if stop:
+                ax.axhline(y=stop, color='#ff0000', linestyle='-', alpha=0.6, linewidth=1.5, label='Stop Loss')
+            if tp:
+                ax.axhline(y=tp, color='#00ff00', linestyle='-', alpha=0.6, linewidth=1.5, label='Take Profit')
+                
+            # مربع معلومات
+            info_text = f"Pattern: {pattern_data.get('pattern', 'Signal')}\nSide: {side}\nEntry: {entry}\nSL: {stop}\nTP: {tp}"
+            ax.text(0.02, 0.98, info_text, 
+                   transform=ax.transAxes, fontsize=10, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='#333333', alpha=0.8, edgecolor='white'))
             
             # رسم خطوط Order Block
             if order_block['Side'] == 'Long':
