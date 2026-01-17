@@ -13,7 +13,7 @@ from shared.database import (
     db_OB, 
     db_Orders,
     init_redis,
-    Get_Candlestick,
+    Get_CandleStick,
     Nearest_OB_Long,
     Nearest_OB_Short,
     json_deserialize,
@@ -35,8 +35,8 @@ async def detect_order_block(symbol):
 
         # انتظار إشعار إغلاق شمعة (blocking)
         await Redis.brpop(f"{symbol}_Close_Candle", 0)
-
-        candles = await Get_CandelStick(symbol, 7)
+        
+        candles = await Get_CandleStick(symbol, 7)
         if len(candles) < 6:
             print(f"[{symbol}] Not enough candles: {len(candles)}/6")
             continue

@@ -10,7 +10,7 @@ from shared.database import (
     init_redis,
     json_serialize,
     json_deserialize,
-    Get_Candlestick
+    Get_CandleStick
 )
 
 # Candle Columns
@@ -36,7 +36,7 @@ async def Detect_Highs_Lows(symbol: str):
             await Redis.brpop(f"{symbol}_Close_Candle", 0)
             
             # Fetch data (we need at least WINDOW + 1 candles)
-            df = await Get_Candlestick(symbol, 20)
+            df = await Get_CandleStick(symbol, 20)
             if len(df) < WINDOW + 1:
                 continue
                 

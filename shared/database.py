@@ -35,7 +35,7 @@ async def init_redis():
         Redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     return Redis
 
-async def Get_CandelStick(symbol: str, limit: int) -> np.ndarray:
+async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     cursor = await db_candle[symbol].aggregate(
         [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
     ).to_list(limit)
