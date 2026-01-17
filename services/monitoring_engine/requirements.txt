@@ -1,3 +1,6 @@
 redis
 motor
 python-dotenv
+numpy
+requests
+aiohttp

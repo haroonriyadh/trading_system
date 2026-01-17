@@ -3,3 +3,5 @@ motor
 redis
 python-dotenv
 pybit
+requests
+aiohttp

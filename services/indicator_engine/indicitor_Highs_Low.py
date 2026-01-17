@@ -55,7 +55,7 @@ async def Detect_Highs_Lows(symbol: str):
                 # If no previous or last was a low
                 if not last_hls or last_hls[-1]["Type"] == 0:
                     new_hl = {
-                        "Open_time": datetime.fromtimestamp(current_time/1000), 
+                        "Open_time": current_time, 
                         "Price": float(df[i, HIGH]), 
                         "Type": 1, 
                         "Side": "High"
@@ -65,7 +65,7 @@ async def Detect_Highs_Lows(symbol: str):
                     await db_indicitors[symbol].update_one(
                         {"Open_time": last_hls[-1]["Open_time"]},
                         {"$set": {
-                            "Open_time": datetime.fromtimestamp(current_time/1000), 
+                            "Open_time": current_time, 
                             "Price": float(df[i, HIGH])
                         }}
                     )
@@ -77,7 +77,7 @@ async def Detect_Highs_Lows(symbol: str):
                 # If no previous or last was a high
                 if not last_hls or last_hls[-1]["Type"] == 1:
                     new_hl = {
-                        "Open_time": datetime.fromtimestamp(current_time/1000), 
+                        "Open_time": current_time, 
                         "Price": float(df[i, LOW]), 
                         "Type": 0, 
                         "Side": "Low"
@@ -87,7 +87,7 @@ async def Detect_Highs_Lows(symbol: str):
                     await db_indicitors[symbol].update_one(
                         {"Open_time": last_hls[-1]["Open_time"]},
                         {"$set": {
-                            "Open_time": datetime.fromtimestamp(current_time/1000), 
+                            "Open_time": current_time, 
                             "Price": float(df[i, LOW])
                         }}
                     )
