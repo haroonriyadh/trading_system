@@ -106,8 +106,13 @@ async fn main() {
         error!("❌ Failed to fetch symbols. Please check internet connection.");
         return;
     }
-    // طباعة أول 3 أسماء للتأكد
-    info!("✅ Loaded {} symbols. Examples: {}, {}, {}", symbols.len(), symbols[0], symbols[1], symbols[2]);
+    // طباعة أسماء للتأكد بشكل آمن
+    match symbols.len() {
+        0 => warn!("⚠️ No symbols loaded."),
+        1 => info!("✅ Loaded 1 symbol: {}", symbols[0]),
+        2 => info!("✅ Loaded 2 symbols: {}, {}", symbols[0], symbols[1]),
+        _ => info!("✅ Loaded {} symbols. Examples: {}, {}, {}", symbols.len(), symbols[0], symbols[1], symbols[2]),
+    }
 
     let ws_url = "wss://stream.bybit.com/v5/public/linear";
     
@@ -181,24 +186,35 @@ async fn main() {
 // =================================================================================
 
 async fn load_symbols_from_json() -> Vec<String> {
-    let path = std::path::Path::new("shared/symbols.json");
-    if !path.exists() {
-        error!("❌ symbols.json not found at {:?}", path);
-        return vec!["BTCUSDT".to_string()];
-    }
+    let paths = vec![
+        "shared/symbols.json",           // Root relative
+        "../shared/symbols.json",        // Level 1 relative
+        "../../shared/symbols.json",     // Level 2 relative (from services/data_feed)
+    ];
 
-    match std::fs::read_to_string(path) {
-        Ok(content) => {
-            match serde_json::from_str::<Vec<String>>(&content) {
-                Ok(symbols) => symbols,
-                Err(e) => {
-                    error!("❌ Failed to parse symbols.json: {:?}", e);
-                    vec!["BTCUSDT".to_string()]
-                }
+    let mut content = None;
+    for p in paths {
+        let path = std::path::Path::new(p);
+        if path.exists() {
+            if let Ok(c) = std::fs::read_to_string(path) {
+                content = Some(c);
+                break;
             }
         }
+    }
+
+    let content = match content {
+        Some(c) => c,
+        None => {
+            error!("❌ symbols.json not found in common locations.");
+            return vec!["BTCUSDT".to_string()];
+        }
+    };
+
+    match serde_json::from_str::<Vec<String>>(&content) {
+        Ok(symbols) => symbols,
         Err(e) => {
-            error!("❌ Failed to read symbols.json: {:?}", e);
+            error!("❌ Failed to parse symbols.json: {:?}", e);
             vec!["BTCUSDT".to_string()]
         }
     }
