@@ -116,5 +116,5 @@ def json_serialize(d):
     return  {kk: (vv.isoformat() if isinstance(vv, datetime) else vv) for kk, vv in d.items()}
 
 def json_deserialize(d):
-    return  {kk: (datetime.fromisoformat(vv) if kk in ['Start_Time','End_Time'] else vv) for kk, vv in d.items()}
+    return  {kk: (datetime.fromisoformat(vv) if kk in ['Start_Time','End_Time', 'Open_time','Close_time'] else vv) for kk, vv in d.items()}
 

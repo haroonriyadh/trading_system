@@ -176,7 +176,7 @@ async def Flag_Pattern_Worker(symbol: str):
                         "pattern": "Flag Pattern",
                         "timestamp": df[i, OPEN_TIME]
                     }
-                    await Redis.publish(f"{symbol}_Trade_Signal", json.dumps(signal))
+                    await Redis.publish(f"{symbol}_Trade_Signal", json.dumps(json_serialize(signal)))
                     print(f"🔥 [{symbol}] FLAG PATTERN DETECTED: {pattern['Side']} | Entry: {signal['entry']}")
                     
             except Exception as e:
