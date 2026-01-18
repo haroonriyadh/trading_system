@@ -1,14 +1,12 @@
 use futures::{StreamExt, SinkExt};
 use mongodb::{options::ClientOptions, Client, Collection, bson::{doc, DateTime}};
-use redis::AsyncCommands;
+use redis::AsyncCommands; // ضروري لعمل publish
 use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Semaphore};
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{info, warn, error, debug};
-use axum::{extract::{Path, State}, routing::get, Json, Router};
-use tower_http::cors::CorsLayer;
-use futures::TryStreamExt; // لإصلاح مشكلة الـ cursor
+use tracing::{info, warn, error};
+
 // =================================================================================
 //  1. Data Structures
 // =================================================================================
@@ -17,7 +15,7 @@ use futures::TryStreamExt; // لإصلاح مشكلة الـ cursor
 struct BybitMsg<'a> {
     #[serde(borrow)]
     topic: &'a str,
-    data: Vec<CandleRaw>, 
+    data: Vec<CandleRaw>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,24 +55,6 @@ struct HLPoint {
     side: String,
 }
 
-// Structs for Dynamic Symbol Fetching
-#[derive(Debug, Deserialize)]
-struct TickerResponse {
-    result: TickerResult,
-}
-
-#[derive(Debug, Deserialize)]
-struct TickerResult {
-    list: Vec<TickerItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TickerItem {
-    symbol: String,
-    #[serde(rename = "turnover24h")]
-    turnover: String,
-}
-
 // =================================================================================
 //  2. Main Entry Point
 // =================================================================================
@@ -86,9 +66,9 @@ async fn main() {
         .with_env_filter("info")
         .init();
 
-    info!("🚀 System Initialization Started (Single Connection Mode)...");
+    info!("🚀 System Initialization Started (Unified Connection Mode)...");
 
-    // 2. Connect DBs (Dynamic hosts for Docker compatibility)
+    // 2. Connect DBs
     let mongo_host = std::env::var("MONGO_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
 
@@ -104,25 +84,25 @@ async fn main() {
     let redis_client = redis::Client::open(redis_url).unwrap();
     let redis_conn = redis_client.get_multiplexed_async_connection().await.unwrap();
 
-    let (tx, _) = broadcast::channel::<String>(10000); 
+    // قناة Broadcast داخلية (اختيارية إذا لم يكن هناك استخدام داخلي آخر)
+    let (tx, _) = broadcast::channel::<String>(10000);
 
     info!("🌍 Loading symbols from shared/symbols.json...");
     let symbols = load_symbols_from_json().await;
-    
+
     if symbols.is_empty() {
         error!("❌ Failed to fetch symbols. Please check internet connection.");
         return;
     }
-    // طباعة أسماء للتأكد بشكل آمن
+    
     match symbols.len() {
         0 => warn!("⚠️ No symbols loaded."),
         1 => info!("✅ Loaded 1 symbol: {}", symbols[0]),
-        2 => info!("✅ Loaded 2 symbols: {}, {}", symbols[0], symbols[1]),
-        _ => info!("✅ Loaded {} symbols. Examples: {}, {}, {}", symbols.len(), symbols[0], symbols[1], symbols[2]),
+        _ => info!("✅ Loaded {} symbols. Examples: {}, {}", symbols.len(), symbols[0], symbols[1]),
     }
 
     let ws_url = "wss://stream.bybit.com/v5/public/linear";
-    
+
     // --- Background Task: Historical Data ---
     let symbols_history = symbols.clone();
     let db_candle_hist = db_candle.clone();
@@ -131,34 +111,20 @@ async fn main() {
         init_historical_data(&symbols_history, &db_candle_hist, &db_indicitors_hist).await;
     });
 
-    // 1. تشغيل سيرفر الـ API في الخلفية (انقله هنا قبل الـ loop)
-    let app = Router::new()
-        .route("/api/history/:symbol", get(get_history))
-        .layer(CorsLayer::permissive())
-        .with_state(db_candle.clone());
-
-    tokio::spawn(async move {
-        info!("🌐 API Server running on http://0.0.0.0:3000");
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-        axum::serve(listener, app).await.unwrap();
-    });
-
-
     // --- Single WebSocket Connection Logic ---
+    // تجهيز التوبيكات
     let topics: Vec<String> = symbols.iter().map(|s| format!("kline.1.{}", s)).collect();
 
-    info!("📡 Attempting Single WebSocket Connection for {} symbols...", symbols.len());
+    info!("📡 Starting Main WebSocket Loop for {} symbols...", symbols.len());
 
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws_stream, _)) => {
-                info!("✅ WebSocket Connected.");
+                info!("✅ WebSocket Connected (Single Stream).");
 
-                // ملاحظة فنية:
-                // رغم أننا نستخدم اتصالاً واحداً، إلا أن Bybit أحياناً ترفض رسالة الاشتراك
-                // إذا كانت تحتوي على عدد ضخم جداً من الـ args في سطر واحد.
-                // للأمان، سنرسل أوامر الاشتراك في دفعات (داخل نفس الاتصال)
-                // هذا لا يفتح اتصالات جديدة، بل يرسل رسائل عبر نفس الأنبوب.
+                // إرسال أوامر الاشتراك (Subscribe)
+                // يتم التقسيم هنا فقط لعدم تجاوز حد طول الرسالة المسموح به في Bybit
+                // لكننا نستخدم نفس الـ ws_stream (اتصال واحد)
                 for chunk in topics.chunks(10) {
                     let subscribe_msg = serde_json::json!({
                         "op": "subscribe",
@@ -167,10 +133,10 @@ async fn main() {
 
                     if let Err(e) = ws_stream.send(Message::Text(subscribe_msg.to_string())).await {
                         error!("❌ Subscription command failed: {:?}", e);
-                        break; // نكسر الحلقة لإعادة الاتصال بالكامل
+                        break; 
                     }
                 }
-                info!("📤 All subscription commands sent.");
+                info!("📤 All subscription commands sent via single connection.");
 
                 // حلقة الاستماع (Listening Loop)
                 while let Some(Ok(msg)) = ws_stream.next().await {
@@ -189,14 +155,14 @@ async fn main() {
 }
 
 // =================================================================================
-//  3. Dynamic Symbol Fetcher
+//  3. Helpers
 // =================================================================================
 
 async fn load_symbols_from_json() -> Vec<String> {
     let paths = vec![
-        "shared/symbols.json",           // Root relative
-        "../shared/symbols.json",        // Level 1 relative
-        "../../shared/symbols.json",     // Level 2 relative (from services/data_feed)
+        "shared/symbols.json",           
+        "../shared/symbols.json",        
+        "../../shared/symbols.json",     
     ];
 
     let mut content = None;
@@ -228,18 +194,18 @@ async fn load_symbols_from_json() -> Vec<String> {
 }
 
 // =================================================================================
-//  4. Real-Time Handler (مع تفعيل طباعة الـ Info لكل تحديث)
+//  4. Real-Time Handler (Updated for Pub/Sub)
 // =================================================================================
 
 async fn handle_message(
-    msg: &str, 
-    tx: &broadcast::Sender<String>, 
-    db: &mongodb::Database, 
+    msg: &str,
+    tx: &broadcast::Sender<String>,
+    db: &mongodb::Database,
     redis_conn: &redis::aio::MultiplexedConnection
 ) {
     let parsed: BybitMsg = match serde_json::from_str(msg) {
         Ok(val) => val,
-        Err(_) => return, 
+        Err(_) => return,
     };
 
     if parsed.data.is_empty() { return; }
@@ -261,30 +227,29 @@ async fn handle_message(
         };
 
         let json_str = serde_json::to_string(&doc).unwrap_or_default();
-        
-        // -------------------------------------------------------------
-        //  التعديل هنا: تفعيل طباعة Info لكل عملة
-        // -------------------------------------------------------------
-        // نستخدم Structured Logging ليكون الأداء سريعاً حتى مع الطباعة الكثيرة
+
         info!(
-            symbol = %symbol, 
-            price = %candle.close, 
-            vol = %candle.volume, 
+            symbol = %symbol,
+            price = %candle.close,
             "⚡ Update"
         );
-        // -------------------------------------------------------------
 
         let mut r_conn = redis_conn.clone();
         let r_symbol = symbol.to_string();
         let r_json = json_str.clone();
         let is_confirm = candle.confirm;
-        
+
         let redis_task = async move {
-            let _: redis::RedisResult<()> = r_conn.publish(format!("{}_RealTime", r_symbol), r_json).await;
+            // 1. Publish RealTime updates
+            let _: redis::RedisResult<()> = r_conn.publish(format!("{}_RealTime", r_symbol), &r_json).await;
+            
+            // 2. Publish Close Candle (Pub/Sub instead of List)
             if is_confirm {
-                 // تمييز الإغلاق بلون مختلف (Warn يظهر بالأصفر غالباً)
                  warn!(symbol = %r_symbol, price = %candle.close, "🔥 Candle CLOSED");
-                 let _: redis::RedisResult<()> = r_conn.lpush(format!("{}_Close_Candle", r_symbol), "Closed").await;
+                 
+                 // تم التغيير من lpush إلى publish
+                 // نقوم ببث بيانات الشمعة المغلقة كاملة بدلاً من مجرد كلمة "Closed" ليستفيد منها المستهلكون
+                 let _: redis::RedisResult<()> = r_conn.publish(format!("{}_Close_Candle", r_symbol), &r_json).await;
             }
         };
 
@@ -295,7 +260,9 @@ async fn handle_message(
             }
         };
 
+        // Broadcast داخلي (يمكن حذفه إذا لم يكن مستخدماً في أجزاء أخرى من الكود)
         let _ = tx.send(json_str);
+        
         tokio::join!(redis_task, mongo_task);
     }
 }
@@ -306,7 +273,7 @@ async fn handle_message(
 
 async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database, db_indicitors: &mongodb::Database) {
     let client = reqwest::Client::new();
-    let semaphore = Arc::new(Semaphore::new(8)); 
+    let semaphore = Arc::new(Semaphore::new(8));
     let mut handles = Vec::new();
 
     info!("📥 Fetching history for {} symbols...", symbols.len());
@@ -321,7 +288,7 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
             let url = format!("https://api.bybit.com/v5/market/kline?category=linear&symbol={}&interval=1&limit=200", symbol);
-            
+
             match client.get(&url).send().await {
                 Ok(resp) => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
@@ -357,7 +324,7 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
                                 candle_docs.reverse();
                                 raw_candles.reverse();
                                 let col_candle: Collection<mongodb::bson::Document> = db_candle.collection(&symbol);
-                                let _ = col_candle.delete_many(doc! {}, None).await; 
+                                let _ = col_candle.delete_many(doc! {}, None).await;
                                 let _ = col_candle.insert_many(candle_docs, None).await;
 
                                 let hl_points = detect_historical_hl(&raw_candles);
@@ -386,10 +353,6 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
     futures::future::join_all(handles).await;
     info!("🏁 All historical data tasks finished.");
 }
-
-// =================================================================================
-//  6. Algorithm
-// =================================================================================
 
 fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
     let mut points = Vec::new();
@@ -420,37 +383,5 @@ fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
         }
     }
     points
-}
-
-async fn get_history(Path(symbol): Path<String>, State(db): State<mongodb::Database>) -> Json<Vec<serde_json::Value>> {
-    let collection = db.collection::<mongodb::bson::Document>(&symbol);
-    // نأخذ 500 شمعة
-    let options = mongodb::options::FindOptions::builder()
-        .sort(mongodb::bson::doc! { "Open_time": -1 })
-        .limit(500)
-        .build();
-
-    let mut cursor = collection.find(mongodb::bson::doc! {}, options).await.unwrap();
-    let mut history = Vec::new();
-
-    while let Ok(Some(doc)) = cursor.try_next().await {
-        // تحويل التاريخ من BSON DateTime إلى Seconds (i64)
-        let open_time = doc.get_datetime("Open_time").unwrap();
-        let timestamp_seconds = open_time.timestamp_millis() / 1000;
-
-        let candle = serde_json::json!({
-            "time": timestamp_seconds as i64, // يجب أن يكون رقماً صحيحاً
-            "open": doc.get_f64("Open").unwrap_or(0.0),
-            "high": doc.get_f64("High").unwrap_or(0.0),
-            "low": doc.get_f64("Low").unwrap_or(0.0),
-            "close": doc.get_f64("Close").unwrap_or(0.0),
-        });
-        history.push(candle);
-    }
-    
-    // هام جداً: الترتيب يجب أن يكون من الأقدم (أصغر رقم وقت) إلى الأحدث
-    history.sort_by_key(|c| c["time"].as_i64().unwrap());
-    
-    Json(history)
 }
 
