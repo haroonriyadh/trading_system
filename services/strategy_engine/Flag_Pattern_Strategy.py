@@ -148,13 +148,9 @@ def FlagPatternConditions(
 
 async def Flag_Pattern_Worker(symbol: str):
     Redis = await init_redis()
-    pubsub = Redis.pubsub()
-    await pubsub.subscribe(f"{symbol}_Close_Candle")
-    
     print(f"[{symbol}] Flag Pattern Worker started.")
-    
-    async for message in pubsub.listen():
-        if message['type'] == 'message':
+    while True:
+            await Redis.brpop(f"{symbol}_Close_Candle", 0)
             try:
                 df = await Get_CandleStick(symbol,limit=310)
                 HL = await Get_HL_Points(symbol,limit=100)
