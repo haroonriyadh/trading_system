@@ -15,8 +15,13 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
         df = pd.DataFrame(candles_data, columns=['open_time', 'open', 'high', 'low', 'close'])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
-        df = df.dropna()
-        print(df)
+
+        df = df.astype({
+          "open":"float64",
+          "high":"float64",
+          "low":"float64",
+          "close":"float64"
+        })
 
         # عنوان المخطط
         title = f'{symbol}'
