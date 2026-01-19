@@ -16,6 +16,7 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
         df = df.dropna()
+        print(df)
 
         # عنوان المخطط
         title = f'{symbol}'
