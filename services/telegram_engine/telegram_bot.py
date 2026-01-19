@@ -12,8 +12,8 @@ from shared.symbols_loader import symbols
 from chart_generator import create_candlestick_chart
 
 # تحميل المتغيرات
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = '7540566987:AAE-RRfOVWraT-co87saoHTfMJujxDQEjaA'
+TELEGRAM_CHAT_ID = '6061081574'
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
