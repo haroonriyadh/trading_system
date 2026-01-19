@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # تأكد من أن هذه المسارات صحيحة في هيكل مشروعك
-from shared.database import init_redis, Get_CandleStick, json_serialize,json_deserialize
+from shared.database import init_redis, Get_CandleStick, json_serialize
 from shared.symbols_loader import symbols
 from chart_generator import create_candlestick_chart
 
@@ -56,14 +56,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Entry_Price": signal_data.get('entry') or signal_data.get('Entry_Price'),
                 "Stop_Loss": signal_data.get('stop_loss') or signal_data.get('Stop_Loss'),
                 "Take_Profit": signal_data.get('take_profit') or signal_data.get('Take_Profit'),
-                "Quantity": "USER_DEFINED", # يمكن تعديل هذا لاحقاً
+                "Quantity": "USER_DEFINED", 
                 "Open_time": datetime.now().isoformat()
             }
 
             # إرسال إلى طابور التنفيذ
             queue_key = f"{symbol}_Open_{normalized_side}_Position"
             
-            # نستخدم json_serialize لضمان توافق الأنواع (مثل datetime)
+            # نستخدم json_serialize لضمان توافق الأنواع
             await Redis.lpush(queue_key, json.dumps(json_serialize(execution_payload)))
 
             # تحديث الرسالة للمستخدم
@@ -97,13 +97,16 @@ async def monitor_signals(application: Application):
     channels = [f"{sym}_Trade_Signal" for sym in symbols]
     if not channels:
         print("⚠️ No symbols loaded to subscribe!", flush=True)
-        return
+        # حتى لو لم توجد رموز، نستمر في الحلقة لعدم إيقاف التاسك
+    else:
+        await pubsub.subscribe(*channels)
+        print(f"✅ Subscribed to {len(channels)} channels.", flush=True)
 
-    await pubsub.subscribe(*channels)
-    print(f"✅ Subscribed to {len(channels)} channels.", flush=True)
-
-    async for message in pubsub.listen():
+    while True:
         try:
+            # انتظار رسالة (timeout قصير للسماح للحلقة بالعمل)
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            
             if message:
                 data_str = message['data']
                 if isinstance(data_str, bytes):
@@ -116,7 +119,6 @@ async def monitor_signals(application: Application):
                 if not symbol: continue
 
                 # 1. جلب البيانات التاريخية لرسم الشارت
-                # نفترض أن الدالة تعيد آخر 100-300 شمعة
                 candles = await Get_CandleStick(symbol, 300)
 
                 if candles is None or len(candles) == 0:
@@ -126,15 +128,13 @@ async def monitor_signals(application: Application):
                 # 2. إنشاء الصورة
                 ts_key = str(int(datetime.now().timestamp()))
                 chart_filename = f"chart_{symbol}_{ts_key}.png"
-                chart_path = os.path.join("/tmp", chart_filename) # يفضل استخدام مسار مؤقت
-                
-                # تأكد من وجود مجلد tmp
+                chart_path = os.path.join("/tmp", chart_filename) 
                 os.makedirs("/tmp", exist_ok=True)
 
                 chart_created = create_candlestick_chart(symbol, candles, pattern_data=signal, save_path=chart_path)
 
                 if chart_created:
-                    # 3. حفظ الإشارة في Redis لانتظار الموافقة (صلاحية 1 ساعة)
+                    # 3. حفظ الإشارة في Redis
                     signal_key = f"PENDING_SIGNAL:{symbol}:{ts_key}"
                     await Redis.setex(signal_key, 3600, json.dumps(signal))
 
@@ -175,19 +175,21 @@ async def monitor_signals(application: Application):
                                 parse_mode='Markdown',
                                 reply_markup=reply_markup
                             )
-                        
-                        # حذف الصورة بعد الإرسال
                         os.remove(chart_path)
                     else:
                         print("❌ TELEGRAM_CHAT_ID is not set.")
 
-            # انتظار قصير جداً لعدم استهلاك المعالج
             await asyncio.sleep(0.1)
 
         except Exception as e:
             print(f"❌ Monitor Error: {e}")
             traceback.print_exc()
-            await asyncio.sleep(5) # انتظار أطول عند الخطأ
+            await asyncio.sleep(5)
+
+async def post_init(application: Application):
+    """يتم تشغيل هذه الدالة بمجرد أن يبدأ البوت"""
+    # نقوم بإنشاء مهمة غير متزامنة (Task) للمراقب لتعمل في الخلفية
+    asyncio.create_task(monitor_signals(application))
 
 def main():
     """نقطة الدخول الرئيسية"""
@@ -197,26 +199,19 @@ def main():
 
     print("🤖 Initializing Bot...", flush=True)
     
-    # بناء التطبيق
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # بناء التطبيق مع إضافة post_init
+    # post_init هو المكان الصحيح لتشغيل المهام الخلفية في الإصدارات الحديثة
+    application = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     # إضافة المعالجات
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(handle_callback))
 
-    # الحصول على حلقة الأحداث الحالية
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # جدولة مهمة المراقبة لتعمل بالتوازي مع البوت
-    # ملاحظة: run_polling ستقوم بتشغيل الحلقة، لذا نضيف المهمة قبلها
-    loop.create_task(monitor_signals(application))
-
     print("✅ Bot is running. Press Ctrl+C to stop.", flush=True)
     
     try:
-        # تشغيل البوت (هذه الدالة حاجبة Blocking وستدير الحلقة)
-        application.run_polling(loop=loop)
+        # تشغيل البوت بدون وسيط loop
+        application.run_polling()
     except KeyboardInterrupt:
         print("🛑 Bot stopped by user.")
     except Exception as e:
