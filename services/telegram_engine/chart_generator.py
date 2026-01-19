@@ -5,35 +5,29 @@ import numpy as np
 from datetime import datetime
 import os
 
-
 def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path="chart.png"):
     """
-    إنشاء مخطط شموع يابانية مع تمييز النماذج الفنية (Flag Pattern / Order Block)
-    
-    Args:
-        symbol: رمز العملة
-        candles_data: بيانات الشموع (numpy array)
-        pattern_data: بيانات النموذج (dict) مثل Flag Pattern أو Order Block
-        save_path: مسار حفظ الصورة
+    إنشاء مخطط شموع يابانية احترافي مع تمييز مستويات الدخول والأهداف.
     """
     try:
         # تحويل البيانات إلى DataFrame
+        # الترتيب المتوقع: timestamp, open, high, low, close, volume
         df = pd.DataFrame(candles_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('datetime', inplace=True)
-        
-        # إعداد الألوان والأنماط
+
+        # إعداد الألوان (Dark Theme)
         mc = mpf.make_marketcolors(
-            up='#00ff00',      # أخضر للشموع الصاعدة
-            down='#ff0000',    # أحمر للشموع الهابطة
+            up='#00ff00',      # أخضر للصعود
+            down='#ff0000',    # أحمر للهبوط
             edge='inherit',
             wick={'up': '#00ff00', 'down': '#ff0000'},
             volume='in'
         )
-        
+
         style = mpf.make_mpf_style(
             marketcolors=mc,
-            gridstyle='-',
+            gridstyle=':',
             gridcolor='#404040',
             y_on_right=True,
             facecolor='#1e1e1e',
@@ -42,21 +36,12 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
             axescolor='#404040',
             textcolor='white'
         )
-        
-        # إعداد خطوط إضافية (tlines) للرسم إذا كان هناك نموذج
-        tlines = []
-        
-        if pattern_data and pattern_data.get('pattern') == 'Flag Pattern':
-            # استخراج النقاط لرسم القناة (Flag)
-            # نفترض أن الاستراتيجية ترسل نقاط القناة أو سنرسم خطوط بسيطة بناءً على Start/End/Head
-            
-            # ملاحظة: mplfinance يحتاج تواريخ للرسم بدقة، هنا سنرسم خطوط بسيطة 
-            # أو يمكننا استخدام alines لرسم خطوط بين نقاط زمنية محددة
-            
-            # سنقوم فقط برسم مستويات الدخول ووقف الخسارة والهدف كخطوط أفقية للتبسيط والدقة
-            pass
 
-        # إعداد المؤامرة
+        # عنوان المخطط
+        pattern_name = pattern_data.get('pattern', 'Analysis') if pattern_data else 'Analysis'
+        title = f'{symbol} - {pattern_name}'
+
+        # إعداد المؤامرة (Plot)
         fig, axes = mpf.plot(
             df,
             type='candle',
@@ -64,135 +49,122 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
             volume=True,
             figsize=(12, 8),
             returnfig=True,
-            title=f'{symbol} - {pattern_data.get("pattern", "Analysis")}' if pattern_data else f'{symbol} - Analysis',
-            tight_layout=True
+            title=title,
+            tight_layout=True,
+            warn_too_much_data=1000
         )
-        
-        ax = axes[0]
+
+        ax = axes[0] # المحور الرئيسي للسعر
 
         if pattern_data:
-            # رسم مستويات الصفقة (Entry, SL, TP)
-            entry = pattern_data.get('entry')
-            stop = pattern_data.get('stop_loss')
-            tp = pattern_data.get('take_profit')
-            side = pattern_data.get('side')
-            
-            if entry:
-                color = '#00ff00' if side == 'Bull' or side == 'Long' else '#ff0000'
-                ax.axhline(y=entry, color='#ffffff', linestyle='--', alpha=0.8, linewidth=1.5, label='Entry')
-            if stop:
-                ax.axhline(y=stop, color='#ff0000', linestyle='-', alpha=0.6, linewidth=1.5, label='Stop Loss')
-            if tp:
-                ax.axhline(y=tp, color='#00ff00', linestyle='-', alpha=0.6, linewidth=1.5, label='Take Profit')
-                
-            # مربع معلومات
-            info_text = f"Pattern: {pattern_data.get('pattern', 'Signal')}\nSide: {side}\nEntry: {entry}\nSL: {stop}\nTP: {tp}"
-            ax.text(0.02, 0.98, info_text, 
-                   transform=ax.transAxes, fontsize=10, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='#333333', alpha=0.8, edgecolor='white'))
-            
-            # رسم خطوط Order Block
-            if order_block['Side'] == 'Long':
-                color = '#00ff00'
-                alpha = 0.3
-            else:
-                color = '#ff0000'
-                alpha = 0.3
-            
-            # رسم منطقة Order Block
-            ax.axhline(y=ob_entry, color=color, linestyle='--', alpha=0.7, linewidth=2)
-            ax.axhline(y=ob_stop, color=color, linestyle='-', alpha=0.5, linewidth=1)
-            
-            # إضافة نص
-            ax.text(0.02, 0.98, f"Order Block: {order_block['Side']}\nEntry: {ob_entry:.4f}\nStop: {ob_stop:.4f}", 
-                   transform=ax.transAxes, fontsize=10, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor=color, alpha=0.3))
-        
-        # حفظ الصورة
-        plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='#1e1e1e')
-        plt.close()
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error creating chart: {e}")
-        return False
+            # استخراج البيانات بمرونة (سواء كانت المفاتيح صغيرة أو كبيرة)
+            entry = pattern_data.get('entry') or pattern_data.get('Entry_Price')
+            stop = pattern_data.get('stop_loss') or pattern_data.get('Stop_Loss')
+            tp = pattern_data.get('take_profit') or pattern_data.get('Take_Profit')
+            side = pattern_data.get('side') or pattern_data.get('Side')
 
+            # تحديد لون الخطوط بناءً على الاتجاه
+            is_long = side in ['Bull', 'Long', 'BUY']
+            line_color = '#00ff00' if is_long else '#ff0000'
+
+            # رسم الخطوط الأفقية
+            if entry:
+                ax.axhline(y=float(entry), color='white', linestyle='--', alpha=0.9, linewidth=1.5, label='Entry')
+            if stop:
+                ax.axhline(y=float(stop), color='#ff4444', linestyle='-', alpha=0.8, linewidth=1.5, label='Stop Loss')
+            if tp:
+                ax.axhline(y=float(tp), color='#00ff00', linestyle='-', alpha=0.8, linewidth=1.5, label='Take Profit')
+
+            # إضافة مربع معلومات (Text Box)
+            info_text = f"Pattern: {pattern_name}\nSide: {side}\nEntry: {entry}"
+            if stop: info_text += f"\nSL: {stop}"
+            if tp: info_text += f"\nTP: {tp}"
+
+            ax.text(0.02, 0.98, info_text,
+                   transform=ax.transAxes, fontsize=11, verticalalignment='top', color='white',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='#333333', alpha=0.9, edgecolor='#555555'))
+
+        # حفظ الصورة
+        plt.savefig(save_path, dpi=100, bbox_inches='tight', facecolor='#1e1e1e')
+        plt.close() # إغلاق لتحرير الذاكرة
+        return True
+
+    except Exception as e:
+        print(f"❌ Error creating candlestick chart: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def create_simple_chart(symbol, candles_data, order_block=None, save_path="chart.png"):
     """
-    إنشاء مخطط بسيط باستخدام matplotlib
+    مخطط بسيط بديل في حال فشل mplfinance أو للاستخدام السريع
     """
     try:
-        # تحويل البيانات
-        timestamps = [ts if isinstance(ts,datetime) else datetime.fromtimestamp(ts/1000) for ts in candles_data[:, 0]]
+        timestamps = [ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts/1000) for ts in candles_data[:, 0]]
         opens = candles_data[:, 1]
         highs = candles_data[:, 2]
         lows = candles_data[:, 3]
         closes = candles_data[:, 4]
-        
-        # إنشاء المخطط
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), 
-                                      gridspec_kw={'height_ratios': [3, 1]})
-        
-        # مخطط الشموع
-        for i, (ts, o, h, l, c) in enumerate(zip(timestamps, opens, highs, lows, closes)):
-            color = 'green' if c >= o else 'red'
-            ax1.plot([i, i], [l, h], color='black', linewidth=1)
-            ax1.plot([i, i], [o, c], color=color, linewidth=3)
-        
-        # إضافة Order Block
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [3, 1]})
+        fig.patch.set_facecolor('#1e1e1e')
+        ax1.set_facecolor('#1e1e1e')
+        ax2.set_facecolor('#1e1e1e')
+
+        # رسم الشموع يدوياً
+        for i, (o, h, l, c) in enumerate(zip(opens, highs, lows, closes)):
+            color = '#00ff00' if c >= o else '#ff0000'
+            ax1.plot([timestamps[i], timestamps[i]], [l, h], color=color, linewidth=1)
+            ax1.plot([timestamps[i], timestamps[i]], [o, c], color=color, linewidth=4)
+
         if order_block:
-            ob_entry = order_block['Entry_Price']
-            ob_stop = order_block['Stop_Loss']
-            color = 'green' if order_block['Side'] == 'Long' else 'red'
+            ob_entry = order_block.get('Entry_Price')
+            ob_stop = order_block.get('Stop_Loss')
+            side = order_block.get('Side')
             
-            ax1.axhline(y=ob_entry, color=color, linestyle='--', alpha=0.7, linewidth=2)
-            ax1.axhline(y=ob_stop, color=color, linestyle='-', alpha=0.5, linewidth=1)
-            
-            ax1.text(0.02, 0.98, f"Order Block: {order_block['Side']}\nEntry: {ob_entry:.4f}\nStop: {ob_stop:.4f}", 
-                    transform=ax1.transAxes, fontsize=10, verticalalignment='top',
-                    bbox=dict(boxstyle='round', facecolor=color, alpha=0.3))
-        
-        ax1.set_title(f'{symbol} - Order Block Detection')
-        ax1.set_ylabel('Price')
-        ax1.grid(True, alpha=0.3)
-        
-        # مخطط الحجم
+            if ob_entry and ob_stop:
+                color = 'green' if side == 'Long' else 'red'
+                ax1.axhline(y=ob_entry, color=color, linestyle='--', alpha=0.7, label='Entry')
+                ax1.axhline(y=ob_stop, color='red', linestyle='-', alpha=0.5, label='SL')
+
+        ax1.set_title(f'{symbol} - Simple View', color='white')
+        ax1.tick_params(axis='x', colors='white')
+        ax1.tick_params(axis='y', colors='white')
+        ax1.grid(True, alpha=0.1)
+
+        # الحجم
         volumes = candles_data[:, 5]
-        ax2.bar(range(len(volumes)), volumes, color='blue', alpha=0.7)
-        ax2.set_ylabel('Volume')
-        ax2.set_xlabel('Time')
-        ax2.grid(True, alpha=0.3)
-        
-        # حفظ الصورة
+        ax2.bar(timestamps, volumes, color='#0088ff', alpha=0.5)
+        ax2.tick_params(axis='x', colors='white')
+        ax2.tick_params(axis='y', colors='white')
+
         plt.tight_layout()
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.savefig(save_path, dpi=100, bbox_inches='tight', facecolor='#1e1e1e')
         plt.close()
-        
         return True
-        
+
     except Exception as e:
-        print(f"Error creating simple chart: {e}")
+        print(f"❌ Error creating simple chart: {e}")
         return False
 
-
+# كتلة الاختبار
 if __name__ == "__main__":
-    # اختبار المخطط
     test_data = np.array([
-        [1640995200000, 100, 105, 95, 102, 1000],
-        [1640995260000, 102, 108, 100, 106, 1200],
-        [1640995320000, 106, 110, 104, 108, 800],
-        [1640995380000, 108, 112, 106, 110, 1500],
-        [1640995440000, 110, 115, 108, 113, 2000],
+        [1640995200000, 40000, 41000, 39500, 40500, 1000],
+        [1640995260000, 40500, 40800, 40200, 40300, 1200],
+        [1640995320000, 40300, 41500, 40200, 41200, 800],
+        [1640995380000, 41200, 42000, 41100, 41800, 1500],
     ])
-    
-    test_ob = {
-        'Side': 'Long',
-        'Start_Time': 1640995320000,
-        'Entry_Price': 110,
-        'Stop_Loss': 108
+
+    test_pattern = {
+        'pattern': 'Bull Flag',
+        'side': 'Long',
+        'entry': 41800,
+        'stop_loss': 40300,
+        'take_profit': 43000
     }
-    
-    create_simple_chart('BTCUSDT', test_data, test_ob, 'test_chart.png')
-    print("Test chart created: test_chart.png")
+
+    print("Generating test chart...")
+    create_candlestick_chart('BTCUSDT', test_data, test_pattern, 'test_chart.png')
+    print("✅ Test chart created: test_chart.png")
+
