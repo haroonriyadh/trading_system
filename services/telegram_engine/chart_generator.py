@@ -47,7 +47,7 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
         # إعداد المؤامرة (Plot)
         fig, axes = mpf.plot(
             df,
-           style=style,
+            style=style,
             type='candle',
             figsize=(12, 8),
             returnfig=True,
@@ -60,7 +60,7 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
 
         ax = axes[0]
         # حفظ الصورة
-        plt.savefig(save_path, dpi=100, bbox_inches='tight', facecolor='#1e1e1e')
+        plt.savefig(save_path, dpi=100)
         plt.close() # إغلاق لتحرير الذاكرة
         return True
 
