@@ -16,18 +16,6 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
 
-
-        style = mpf.make_mpf_style(
-            gridstyle=':',
-            gridcolor='#404040',
-            y_on_right=True,
-            facecolor='#1e1e1e',
-            edgecolor='#404040',
-            figcolor='#1e1e1e',
-            axescolor='#404040',
-            textcolor='white'
-        )
-
         # عنوان المخطط
         title = f'{symbol}'
 
@@ -35,7 +23,6 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
         fig, axes = mpf.plot(
             df,
             type='candle',
-            style=style,
             figsize=(12, 8),
             returnfig=True,
             title=title,
