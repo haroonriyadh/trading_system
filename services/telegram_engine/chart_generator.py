@@ -22,7 +22,7 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
           "low":"float64",
           "close":"float64"
         })
-
+        df = df.loc[pattern_data["start_index"]:pattern_data["end_index"]]
         # عنوان المخطط
         title = f'{symbol}'
 
