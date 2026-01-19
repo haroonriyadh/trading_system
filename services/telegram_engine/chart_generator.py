@@ -12,9 +12,9 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
     try:
         # تحويل البيانات إلى DataFrame
         # الترتيب المتوقع: timestamp, open, high, low, close, volume
-        df = pd.DataFrame(candles_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('datetime', inplace=True)
+        df = pd.DataFrame(candles_data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume','close_time'])
+        df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+        df.set_index('open_time', inplace=True)
 
         # إعداد الألوان (Dark Theme)
         mc = mpf.make_marketcolors(
