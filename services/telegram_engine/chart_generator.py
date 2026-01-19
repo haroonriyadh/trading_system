@@ -12,7 +12,7 @@ def create_candlestick_chart(symbol, candles_data, pattern_data=None, save_path=
     try:
         # تحويل البيانات إلى DataFrame
         # الترتيب المتوقع: timestamp, open, high, low, close, volume
-        df = pd.DataFrame(candles_data, columns=['open_time', 'open', 'high', 'low', 'close', 'volume','close_time'])
+        df = pd.DataFrame(candles_data, columns=['open_time', 'open', 'high', 'low', 'close'])
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
         df.set_index('open_time', inplace=True)
 
