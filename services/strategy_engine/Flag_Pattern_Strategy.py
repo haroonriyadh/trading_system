@@ -65,9 +65,6 @@ def FlagPatternConditions(
         "FlagRatio":0,
         "correlation":0
     }
-
-    if len(HL_raw) < 5:
-        return Pattern
     
     # Map datatime to indices
     time_to_idx = {t: idx for idx, t in enumerate(df[:, OPEN_TIME])}
@@ -75,7 +72,7 @@ def FlagPatternConditions(
     HL_idx = [[time_to_idx[h[0]], h[1], h[2]] for h in HL_raw if h[0] in time_to_idx]
     HL = np.array(HL_idx)
 
-    if len(HL_idx) < 5 or i-HL[0,0] < 50:
+    if len(HL) < 5 or i-HL[-1,0] < 50:
         return Pattern
         
     
