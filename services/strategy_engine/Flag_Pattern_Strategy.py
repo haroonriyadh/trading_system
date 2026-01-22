@@ -22,6 +22,8 @@ LOW = 3
 CLOSE = 4
 SOFT = CLOSE
 
+last_sl = {symbol: {"Long":None, "Short": None} for symbol in symbols}
+
 def Trend_Regression(x:np.ndarray,y:np.ndarray):
     N = len(x)
     sx = x.sum()
@@ -111,13 +113,16 @@ def FlagPatternConditions(
             _, _, _, _, _, upper_long_shift_1, _ = Trend_Regression(np.arange(HI, i), df[HI:i, SOFT])
             
             if df[i, CLOSE] > upper_long[-1] and df[i-1, CLOSE] < upper_long_shift_1[-1]:
-                Pattern["Side"] = "Bull"
-                Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
-                Pattern["EndIndex"] = df[i, OPEN_TIME]
-                Pattern["TakeProfit"] = float(df[HI, HIGH])
-                Pattern["StopLoss"] = float(df[HI:i+1, LOW].min())
-                Pattern["HeadIndex"] = df[HI, OPEN_TIME]
-                return Pattern
+               
+               if last_sl[symbol]["Long"] != df[HI:i+1, LOW].min():
+                   Pattern["Side"] = "Bull"
+                   Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
+                   Pattern["EndIndex"] = df[i, OPEN_TIME]
+                   Pattern["TakeProfit"] = df[HI, HIGH]
+                   Pattern["StopLoss"] = df[HI:i+1, LOW].min()
+                   Pattern["HeadIndex"] = df[HI, OPEN_TIME]
+                   last_sl[symbol]["Long"] = df[HI:i+1, LOW].min()
+                   return Pattern
 
         # Validate Bear Flag 
         elif Start_Type == 1 and LP != Last_Price and HP == Start_Price and LI > Start_Index and \
@@ -129,13 +134,15 @@ def FlagPatternConditions(
             _, _, _, _, _, _, lower_short_shift_1 = Trend_Regression(np.arange(LI, i), df[LI:i, SOFT]) 
             
             if df[i, CLOSE] < lower_short[-1] and df[i-1, CLOSE] > lower_short_shift_1[-1]:
-                Pattern["Side"] = "Bear"
-                Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
-                Pattern["EndIndex"] = df[i, OPEN_TIME]
-                Pattern["TakeProfit"] = float(df[LI, LOW])
-                Pattern["StopLoss"] = float(df[LI:i, HIGH].max())
-                Pattern["HeadIndex"] = df[LI, OPEN_TIME]
-                return Pattern
+               if last_sl[symbol]["Short"] != df[LI:i, HIGH].max():
+                   Pattern["Side"] = "Bear"
+                   Pattern["StartIndex"] = df[Start_Index, OPEN_TIME]
+                   Pattern["EndIndex"] = df[i, OPEN_TIME]
+                   Pattern["TakeProfit"] = df[LI, LOW]
+                   Pattern["StopLoss"] = df[LI:i, HIGH].max()
+                   Pattern["HeadIndex"] = df[LI, OPEN_TIME]
+                   last_sl[symbol]["Short"] = df[LI:i, HIGH].max()
+                   return Pattern
 
         if abs(index - 1) < len(HL):
             index -= 1
@@ -161,7 +168,7 @@ async def Flag_Pattern_Worker(symbol: str):
                     continue
                     
                 i = len(df) - 1
-                pattern = FlagPatternConditions(df, i, HL)
+                pattern = FlagPatternConditions(symbol,df, i, HL)
                 
                 if pattern["Side"] != 0:
                     signal = {
