@@ -45,6 +45,7 @@ def Trend_Regression(x:np.ndarray,y:np.ndarray):
     return m, b, r, sigma, mid_line, upper_trendline, lower_trendline
 
 def FlagPatternConditions(
+        symbol:str,
         df:np.ndarray,
         i:int,
         HL_raw:np.ndarray,
