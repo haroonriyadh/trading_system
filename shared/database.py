@@ -65,7 +65,7 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     ][::-1]
 
     # استخدام float64 يوفر الذاكرة ويسرع العمليات الحسابية
-    return np.array(data, dtype=objet)
+    return np.array(data, dtype=object)
 
 async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
     """
