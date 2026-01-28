@@ -39,7 +39,7 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     """
     # استخدام find مع projection لتقليل البيانات المنقولة
     # الترتيب -1 يستفيد من الـ Index الموجود
-    cursor = db_candle[symbol].find(
+    cursor = await db_candle[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
     ).sort("Open_time", -1).to_list(length=limit)
@@ -64,7 +64,7 @@ async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
     جلب نقاط High/Low.
     هنا نستخدم dtype=object لأن النوع Type عبارة عن نص (String).
     """
-    cursor = db_indicitors[symbol].find(
+    cursor = await  db_indicitors[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
     ).sort("Open_time", -1).to_list(length=limit)
