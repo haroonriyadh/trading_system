@@ -29,5 +29,5 @@ jobs:
                     cd ~/trading_system
                     git pull origin main
                     cd infra
-                    docker-compose --profile strategy up -d --build strategy_engine
+                    docker compose --profile strategy up -d --build strategy_engine
                   EOF

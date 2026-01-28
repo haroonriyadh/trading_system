@@ -29,5 +29,5 @@ jobs:
                     cd ~/trading_system
                     git pull origin main
                     cd infra
-                    docker-compose --profile indicator up -d --build indicator_engine
+                    docker compose --profile indicator up -d --build indicator_engine
                   EOF

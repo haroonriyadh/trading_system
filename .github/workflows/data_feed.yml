@@ -28,5 +28,5 @@ jobs:
             cd ~/trading_system
             git pull origin main
             cd infra
-            docker-compose --profile data_feed up -d --build data_feed
+            docker compose --profile data_feed up -d --build data_feed
           EOF

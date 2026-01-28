@@ -29,5 +29,5 @@ jobs:
                     cd ~/trading_system
                     git pull origin main
                     cd infra
-                    docker-compose --profile telegram up -d --build telegram_engine
+                    docker compose --profile telegram up -d --build telegram_engine
                   EOF
