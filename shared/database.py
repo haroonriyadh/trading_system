@@ -33,48 +33,30 @@ async def init_redis():
     return Redis
 
 async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
-    """
-    جلب بيانات الشموع بسرعة عالية جداً واستهلاك رام منخفض.
-    يتم تحويل الوقت إلى timestamp لتكون المصفوفة كلها float64.
-    """
-    # استخدام find مع projection لتقليل البيانات المنقولة
-    # الترتيب -1 يستفيد من الـ Index الموجود
-    cursor = await db_candle[symbol].find(
+    # 1. طلب الحقول المحددة فقط + الترتيب العكسي لاستغلال الفهرس
+    cursor = db_candle[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
-    ).sort("Open_time", -1).to_list(length=limit)
+    ).sort("Open_time", -1).limit(limit)
+    
+    # 2. بناء القائمة يدوياً (أسرع من Loop) ثم قلب الترتيب
+    return np.array([
+        [c["Open_time"], c["Open"], c["High"], c["Low"], c["Close"]] 
+        for c in await cursor.to_list(limit)
+    ], dtype=object)[::-1]
 
-    print(cursor)
-    data = [
-        [
-            d["Open_time"], 
-            d["Open"], 
-            d["High"], 
-            d["Low"], 
-            d["Close"]
-        ] 
-        for d in cursor
-    ][::-1]
-    print(data)
-    # استخدام float64 يوفر الذاكرة ويسرع العمليات الحسابية
-    return np.array(data, dtype=object)
 
 async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
-    """
-    جلب نقاط High/Low.
-    هنا نستخدم dtype=object لأن النوع Type عبارة عن نص (String).
-    """
-    cursor = await  db_indicitors[symbol].find(
+    cursor = db_indicitors[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
-    ).sort("Open_time", -1).to_list(length=limit)
-
-    print(cursor)
-    # الترتيب الزمني: من الأقدم للأحدث
+    ).sort("Open_time", -1).limit(limit)
+    
     return np.array([
-        [d["Open_time"], d["Price"], d["Type"]] 
-        for d in docs
+        [c["Open_time"], c["Price"], c["Type"]] 
+        for c in await cursor.to_list(limit)
     ], dtype=object)[::-1]
+
 
 # -------------------
 # JSON Helpers
