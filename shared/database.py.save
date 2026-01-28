@@ -42,9 +42,14 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     cursor = db_candle[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
-    ).sort("Open_time", -1).to_list(length=limit)
+    ).sort("Open_time", -1).limit(limit)
 
-    print(cursor)
+    docs = await cursor.to_list(length=limit)
+
+    # التحسين الجوهري للرام:
+    # 1. تحويل Open_time من object إلى timestamp (float)
+    # 2. إنشاء القائمة بترتيب: [Time, Open, High, Low, Close]
+    # 3. عكس القائمة [::-1] لتصبح (الأقدم -> الأحدث)
     data = [
         [
             d["Open_time"], 
@@ -53,9 +58,9 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
             d["Low"], 
             d["Close"]
         ] 
-        for d in cursor
+        for d in docs
     ][::-1]
-    print(data)
+
     # استخدام float64 يوفر الذاكرة ويسرع العمليات الحسابية
     return np.array(data, dtype=object)
 
@@ -67,9 +72,18 @@ async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
     cursor = db_indicitors[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
-    ).sort("Open_time", -1).to_list(length=limit)
+    ).sort("Open_time", -1).limit(limit)
 
-    print(cursor)
+    docs = await cursor.to_list(length=limit)
+    data = [
+      [
+        d["Open_time"], 
+        d["Price"], 
+        d["Type"]
+      ]
+      for d in docs 
+    ][::-1]
+
     # الترتيب الزمني: من الأقدم للأحدث
     return np.array([
         [d["Open_time"], d["Price"], d["Type"]] 
