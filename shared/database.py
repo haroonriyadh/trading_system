@@ -37,12 +37,12 @@ async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
     cursor = db_candle[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
-    ).sort("Open_time", -1).limit(limit)
-    
+    ).sort("Open_time", -1).limit(limit).to_list()
+    print(cursor)
     # 2. بناء القائمة يدوياً (أسرع من Loop) ثم قلب الترتيب
     return np.array([
         [c["Open_time"], c["Open"], c["High"], c["Low"], c["Close"]] 
-        for c in await cursor.to_list(limit)
+        for c in await cursor
     ], dtype=object)[::-1]
 
 
@@ -50,11 +50,11 @@ async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
     cursor = db_indicitors[symbol].find(
         {}, 
         {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
-    ).sort("Open_time", -1).limit(limit)
-    
+    ).sort("Open_time", -1).limit(limit).to_list()
+    print(cursor)
     return np.array([
         [c["Open_time"], c["Price"], c["Type"]] 
-        for c in await cursor.to_list(limit)
+        for c in await cursor
     ], dtype=object)[::-1]
 
 
