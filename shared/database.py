@@ -4,10 +4,12 @@ import redis.asyncio as redis
 import numpy as np
 from motor.motor_asyncio import AsyncIOMotorClient
 
+
+
+
 # -------------------
 # MongoDB Async
 # -------------------
-
 MONGO_HOST = os.getenv("MONGO_HOST", "mongo")
 MONGO_PORT = int(os.getenv("MONGO_PORT", 27017))
 
@@ -17,12 +19,13 @@ db_OB = mongo_client['Order_Block']
 db_Orders = mongo_client['Open_Orders']
 db_indicitors = mongo_client['Indicitors']
 
+
 # -------------------
 # Redis Async
 # -------------------
-
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+#Redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 Redis = None
 
@@ -33,29 +36,19 @@ async def init_redis():
     return Redis
 
 async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
-    # 1. طلب الحقول المحددة فقط + الترتيب العكسي لاستغلال الفهرس
-    cursor = db_candle[symbol].find(
-        {}, 
-        {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
-    ).sort("Open_time", -1).limit(limit).to_list()
-    print(cursor)
-    # 2. بناء القائمة يدوياً (أسرع من Loop) ثم قلب الترتيب
-    return np.array([
-        [c["Open_time"], c["Open"], c["High"], c["Low"], c["Close"]] 
-        for c in await cursor
-    ], dtype=object)[::-1]
+    cursor = await db_candle[symbol].aggregate(
+        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
+    ).to_list(limit)
+    
+    return np.array([[c.get(col) for col in ["Open_time", "Open", "High", "Low", "Close"]] for c in cursor], dtype=object)[::-1]
 
 
 async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
-    cursor = db_indicitors[symbol].find(
-        {}, 
-        {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
-    ).sort("Open_time", -1).limit(limit).to_list()
-    print(cursor)
-    return np.array([
-        [c["Open_time"], c["Price"], c["Type"]] 
-        for c in await cursor
-    ], dtype=object)[::-1]
+    cursor = await db_indicitors[symbol].aggregate(
+        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
+    ).to_list(limit)
+    
+    return np.array([[c.get(col) for col in ["Open_time", "Price", "Type"]] for c in cursor], dtype=object)[::-1]
 
 
 # -------------------
