@@ -10,7 +10,8 @@ from shared.database import (
     init_redis,
     json_serialize,
     json_deserialize,
-    Get_CandleStick
+    Get_CandleStick,
+    Get_HL_Points
 )
 
 # Candle Columns
@@ -21,11 +22,6 @@ LOW = 3
 CLOSE = 4
 
 WINDOW = 5 # Window for High/Low detection
-
-
-async def Get_Last_HL(symbol: str, limit: int = 2) -> list:
-    results = await db_indicitors[symbol].find({}, {"_id": 0}).sort("Open_time", -1).limit(limit).to_list(limit)
-    return results[::-1] # chronological order
 
 async def Detect_Highs_Lows(symbol: str):
     Redis = await init_redis()
@@ -44,7 +40,7 @@ async def Detect_Highs_Lows(symbol: str):
             	current_time = df[i, OPEN_TIME]
             
             	# Get existing HL state from MongoDB
-            	last_hls = await Get_Last_HL(symbol)
+            	last_hls = await Get_HL_Points(symbol,3)
             
             	# Format: [{"Open_time": datetime, "Price": ..., "Type": ...}]
             	new_hl = None
@@ -52,20 +48,19 @@ async def Detect_Highs_Lows(symbol: str):
             	# Check for a candle that has reached a high
             	if df[i, HIGH] == df[i-WINDOW : i+1, HIGH].max():
                    # If no previous or last was a low
-                   if not last_hls or last_hls[-1]["Type"] == 0:
+                   if last_hls[-1,2] == 0:
                     	new_hl = {
                         "Open_time": current_time, 
-                        "Price": float(df[i, HIGH]), 
-                        "Type": 1, 
-                        "Side": "High"
+                        "Price": df[i, HIGH], 
+                        "Type": 1
                     }
                    # If last was a high and current high is higher, update it
-                   elif last_hls[-1]["Type"] == 1 and df[i, HIGH] > last_hls[-1]["Price"]:
+                   elif last_hls[-1,2] == 1 and df[i, HIGH] > last_hls[-1,1]:
                        await db_indicitors[symbol].update_one(
-                        {"Open_time": last_hls[-1]["Open_time"]},
+                        {"Open_time": last_hls[-1,0]},
                         {"$set": {
                             "Open_time": current_time, 
-                            "Price": float(df[i, HIGH])
+                            "Price": df[i, HIGH]
                         }}
                        )
                        print(f"[{symbol}] Updated Higher High at {df[i, HIGH]}")
@@ -73,27 +68,26 @@ async def Detect_Highs_Lows(symbol: str):
             	# Check for a candle that has reached a low
             	elif df[i, LOW] == df[i-WINDOW:i+1, LOW].min():
                    # If no previous or last was a high
-                   if not last_hls or last_hls[-1]["Type"] == 1:
+                   if last_hls[-1,2] == 1:
                        new_hl = {
                         "Open_time": current_time, 
-                        "Price": float(df[i, LOW]), 
-                        "Type": 0, 
-                        "Side": "Low"
+                        "Price": df[i, LOW], 
+                        "Type": 0
                        }
                    # If last was a low and current low is lower, update it
-                   elif last_hls[-1]["Type"] == 0 and df[i, LOW] < last_hls[-1]["Price"]:
+                   elif last_hls[-1,2] == 0 and df[i, LOW] < last_hls[-1,1]:
                        await db_indicitors[symbol].update_one(
-                        {"Open_time": last_hls[-1]["Open_time"]},
+                        {"Open_time": last_hls[-1,0]},
                         {"$set": {
                             "Open_time": current_time, 
-                            "Price": float(df[i, LOW])
+                            "Price": df[i, LOW]
                         }}
                        )
                        print(f"[{symbol}] Updated Lower Low at {df[i, LOW]}")
 
             	if new_hl:
                     await db_indicitors[symbol].insert_one(new_hl)
-                    print(f"[{symbol}] Detected New {new_hl['Side']} at {new_hl['Price']}")
+                    print(f"[{symbol}] Detected New Pivot at {new_hl['Price']}")
 
             except Exception as e:
                print(f"Error in Detect_Highs_Lows for {symbol}: {e}")
