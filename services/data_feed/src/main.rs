@@ -51,8 +51,7 @@ where
 struct HLPoint {
     open_time: i64,
     price: f64,
-    hl_type: String,
-    side: String,
+    hl_type: i32
 }
 
 // =================================================================================
@@ -89,7 +88,6 @@ async fn main() {
 
     info!("🌍 Loading symbols from shared/symbols.json...");
     let symbols = load_symbols_from_json().await;
-
     if symbols.is_empty() {
         error!("❌ Failed to fetch symbols. Please check internet connection.");
         return;
@@ -333,8 +331,7 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
                                         doc! {
                                             "Open_time": DateTime::from_millis(p.open_time),
                                             "Price": p.price,
-                                            "Type": p.hl_type,
-                                            "Side": p.side
+                                            "Type": p.hl_type
                                         }
                                     }).collect();
                                     let col_ind: Collection<mongodb::bson::Document> = db_indicitors.collection(&symbol);
@@ -369,16 +366,14 @@ fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
             points.push(HLPoint {
                 open_time: current.0,
                 price: current.2,
-                hl_type: "High".to_string(),
-                side: "Top".to_string(),
+                hl_type: 1
             });
         }
         if current.3 < prev1.3 && current.3 < prev2.3 && current.3 < next1.3 && current.3 < next2.3 {
             points.push(HLPoint {
                 open_time: current.0,
                 price: current.3,
-                hl_type: "Low".to_string(),
-                side: "Bottom".to_string(),
+                hl_type: 0
             });
         }
     }
