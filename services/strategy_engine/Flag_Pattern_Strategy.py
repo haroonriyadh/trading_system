@@ -70,7 +70,7 @@ def FlagPatternConditions(
     time_to_idx = {t: idx for idx, t in enumerate(df[:, OPEN_TIME])}
     
     HL_idx = [[time_to_idx[h[0]], h[1], h[2]] for h in HL_raw if h[0] in time_to_idx]
-    HL = np.array(HL_idx)
+    HL = np.array(HL_idx,dtype=object)
 
     if len(HL) < 5 or i-HL[0,0] < 50:
         return Pattern
