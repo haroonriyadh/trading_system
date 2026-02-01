@@ -36,18 +36,25 @@ async def init_redis():
     return Redis
 
 async def Get_CandleStick(symbol: str, limit: int) -> np.ndarray:
-    cursor = await db_candle[symbol].aggregate(
-        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
-    ).to_list(limit)
+    cursor = await db_candle[symbol].find(
+        {},
+        {"_id": 0, "Open_time": 1, "Open": 1, "High": 1, "Low": 1, "Close": 1}
+    )
+    .sort("Open_time", -1)
+    .to_list(limit)
+  
     
     return np.array([[c.get(col) for col in ["Open_time", "Open", "High", "Low", "Close"]] for c in cursor], dtype=object)[::-1]
 
 
 async def Get_HL_Points(symbol: str, limit: int) -> np.ndarray:
-    cursor = await db_indicitors[symbol].aggregate(
-        [{"$project": {"_id": 0}}, {"$sort": {"Open_time": -1}}]
-    ).to_list(limit)
-    
+    cursor = await db_indicitors[symbol].find(
+        {},
+        {"_id": 0, "Open_time": 1, "Price": 1, "Type": 1}
+    )
+    .sort("Open_time", -1)
+    .to_list(limit)
+
     return np.array([[c.get(col) for col in ["Open_time", "Price", "Type"]] for c in cursor], dtype=object)[::-1]
 
 
