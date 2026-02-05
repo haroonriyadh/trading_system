@@ -1,6 +1,6 @@
 use futures::{StreamExt, SinkExt};
-use mongodb::{options::ClientOptions, Client, Collection, bson::{doc, DateTime}};
-use redis::AsyncCommands; // ضروري لعمل publish
+use mongodb::{options::ClientOptions, Client, Collection, IndexModel, bson::{doc, DateTime}};
+use redis::AsyncCommands;
 use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Semaphore};
@@ -65,7 +65,7 @@ async fn main() {
         .with_env_filter("info")
         .init();
 
-    info!("🚀 System Initialization Started (Unified Connection Mode)...");
+    info!("🚀 System Initialization Started (Unified Connection Mode with Auto-Indexing)...");
 
     // 2. Connect DBs
     let mongo_host = std::env::var("MONGO_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -83,7 +83,6 @@ async fn main() {
     let redis_client = redis::Client::open(redis_url).unwrap();
     let redis_conn = redis_client.get_multiplexed_async_connection().await.unwrap();
 
-    // قناة Broadcast داخلية (اختيارية إذا لم يكن هناك استخدام داخلي آخر)
     let (tx, _) = broadcast::channel::<String>(10000);
 
     info!("🌍 Loading symbols from shared/symbols.json...");
@@ -101,7 +100,7 @@ async fn main() {
 
     let ws_url = "wss://stream.bybit.com/v5/public/linear";
 
-    // --- Background Task: Historical Data ---
+    // --- Background Task: Historical Data (Includes Index Creation) ---
     let symbols_history = symbols.clone();
     let db_candle_hist = db_candle.clone();
     let db_indicitors_hist = db_indicitors.clone();
@@ -110,7 +109,6 @@ async fn main() {
     });
 
     // --- Single WebSocket Connection Logic ---
-    // تجهيز التوبيكات
     let topics: Vec<String> = symbols.iter().map(|s| format!("kline.1.{}", s)).collect();
 
     info!("📡 Starting Main WebSocket Loop for {} symbols...", symbols.len());
@@ -120,9 +118,6 @@ async fn main() {
             Ok((mut ws_stream, _)) => {
                 info!("✅ WebSocket Connected (Single Stream).");
 
-                // إرسال أوامر الاشتراك (Subscribe)
-                // يتم التقسيم هنا فقط لعدم تجاوز حد طول الرسالة المسموح به في Bybit
-                // لكننا نستخدم نفس الـ ws_stream (اتصال واحد)
                 for chunk in topics.chunks(10) {
                     let subscribe_msg = serde_json::json!({
                         "op": "subscribe",
@@ -136,7 +131,6 @@ async fn main() {
                 }
                 info!("📤 All subscription commands sent via single connection.");
 
-                // حلقة الاستماع (Listening Loop)
                 while let Some(Ok(msg)) = ws_stream.next().await {
                     if let Message::Text(txt) = msg {
                         handle_message(&txt, &tx, &db_candle, &redis_conn).await;
@@ -191,8 +185,23 @@ async fn load_symbols_from_json() -> Vec<String> {
     }
 }
 
+// ---------------------------------------------------------------------------------
+//  🛠️ NEW: Helper to ensure index exists
+// ---------------------------------------------------------------------------------
+async fn ensure_index(collection: &Collection<mongodb::bson::Document>) {
+    // Create an index on "Open_time" in descending order (-1)
+    let model = IndexModel::builder()
+        .keys(doc! { "Open_time": -1 })
+        .build();
+
+    // create_index is idempotent: if it exists, it does nothing (very fast)
+    if let Err(e) = collection.create_index(model, None).await {
+        error!("❌ Failed to create index for collection {}: {:?}", collection.name(), e);
+    }
+}
+
 // =================================================================================
-//  4. Real-Time Handler (Updated for Pub/Sub)
+//  4. Real-Time Handler
 // =================================================================================
 
 async fn handle_message(
@@ -238,15 +247,10 @@ async fn handle_message(
         let is_confirm = candle.confirm;
 
         let redis_task = async move {
-            // 1. Publish RealTime updates
             let _: redis::RedisResult<()> = r_conn.publish(format!("{}_RealTime", r_symbol), &r_json).await;
             
-            // 2. Publish Close Candle (Pub/Sub instead of List)
             if is_confirm {
                  warn!(symbol = %r_symbol, price = %candle.close, "🔥 Candle CLOSED");
-                 
-                 // تم التغيير من lpush إلى publish
-                 // نقوم ببث بيانات الشمعة المغلقة كاملة بدلاً من مجرد كلمة "Closed" ليستفيد منها المستهلكون
                  let _: redis::RedisResult<()> = r_conn.publish(format!("{}_Close_Candle", r_symbol), &r_json).await;
             }
         };
@@ -254,11 +258,12 @@ async fn handle_message(
         let mongo_task = async {
             if candle.confirm {
                 let collection: Collection<mongodb::bson::Document> = db.collection(symbol);
+                // Note: We don't create index here to avoid overhead on every msg.
+                // It is handled in init_historical_data.
                 let _ = collection.insert_one(doc, None).await;
             }
         };
 
-        // Broadcast داخلي (يمكن حذفه إذا لم يكن مستخدماً في أجزاء أخرى من الكود)
         let _ = tx.send(json_str);
         
         tokio::join!(redis_task, mongo_task);
@@ -266,7 +271,7 @@ async fn handle_message(
 }
 
 // =================================================================================
-//  5. Historical Data Logic
+//  5. Historical Data Logic (With Indexing)
 // =================================================================================
 
 async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database, db_indicitors: &mongodb::Database) {
@@ -274,7 +279,7 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
     let semaphore = Arc::new(Semaphore::new(8));
     let mut handles = Vec::new();
 
-    info!("📥 Fetching history for {} symbols...", symbols.len());
+    info!("📥 Fetching history and ensuring indexes for {} symbols...", symbols.len());
 
     for symbol in symbols {
         let symbol = symbol.clone();
@@ -321,10 +326,21 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
                             if !candle_docs.is_empty() {
                                 candle_docs.reverse();
                                 raw_candles.reverse();
+                                
+                                // ----------------------------------------------------
+                                // 1. Handle Candle Collection (Clean, Index, Insert)
+                                // ----------------------------------------------------
                                 let col_candle: Collection<mongodb::bson::Document> = db_candle.collection(&symbol);
+                                
+                                // 🛠️ Ensure Index Exists!
+                                ensure_index(&col_candle).await;
+
                                 let _ = col_candle.delete_many(doc! {}, None).await;
                                 let _ = col_candle.insert_many(candle_docs, None).await;
 
+                                // ----------------------------------------------------
+                                // 2. Handle Indicators Collection
+                                // ----------------------------------------------------
                                 let hl_points = detect_historical_hl(&raw_candles);
                                 if !hl_points.is_empty() {
                                     let hl_docs: Vec<mongodb::bson::Document> = hl_points.into_iter().map(|p| {
@@ -334,7 +350,12 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
                                             "Type": p.hl_type
                                         }
                                     }).collect();
+                                    
                                     let col_ind: Collection<mongodb::bson::Document> = db_indicitors.collection(&symbol);
+                                    
+                                    // 🛠️ Ensure Index Exists!
+                                    ensure_index(&col_ind).await;
+                                    
                                     let _ = col_ind.delete_many(doc! {}, None).await;
                                     let _ = col_ind.insert_many(hl_docs, None).await;
                                 }
@@ -348,7 +369,7 @@ async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database,
     }
 
     futures::future::join_all(handles).await;
-    info!("🏁 All historical data tasks finished.");
+    info!("🏁 All historical data tasks finished (Indexes Verified).");
 }
 
 fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
@@ -379,4 +400,3 @@ fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
     }
     points
 }
-
