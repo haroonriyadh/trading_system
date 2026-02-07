@@ -61,7 +61,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
 
             # إرسال إلى طابور التنفيذ
-            queue_key = f"{symbol}_Open_{normalized_side}_Position"
+            queue_key = f"{symbol}_Open_Position"
             
             # نستخدم json_serialize لضمان توافق الأنواع
             await Redis.lpush(queue_key, json.dumps(json_serialize(execution_payload)))

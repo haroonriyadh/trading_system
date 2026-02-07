@@ -1,12 +1,12 @@
 import asyncio
 import json
 from shared.symbols_loader import symbols
-from telegram_bot import send_telegram_message
 import traceback
 from shared.database import (
     db_Orders,
     init_redis,
     json_deserialize
+    
 )
 
 from bybit_client import (
@@ -19,7 +19,7 @@ from bybit_client import (
     min_notional
 )
 
-Risk_in_Position = 1
+Risk_in_Position = 0.1
 
 fees = 0.10
 
@@ -39,20 +39,17 @@ def TP_short(buy_price, sl, fees, RRR):
 
 async def Execution_Order(symbol):
     Redis = await init_redis()
-    # Monitor both Long and Short queues simultaneously
-    keys = [f"{symbol}_Open_Long_Position", f"{symbol}_Open_Short_Position"]
-    
     while True:
         try:
             # brpop returns (key, value) when it gets a message from any of the keys
-            result = await Redis.brpop(keys, 0)
+            result = await Redis.brpop(f"{symbol}_Open_Position", 0)
             if not result:
                 continue
                 
             key, raw_order = result
-            Side = "Long" if "Long" in key else "Short"
             Order = json_deserialize(json.loads(raw_order))
-
+            Side = Order["Side"]
+            
             if isinstance(Order, dict):
                 # Run synchronous API calls in a thread pool to avoid blocking the event loop
                 balance_info = await asyncio.to_thread(get_coin_balance, "USDT")
@@ -112,16 +109,7 @@ async def Execution_Order(symbol):
                         print(f"System Placed Market Order in {symbol} at {Order['Entry_Price']}")
                     else:
                         print(f"Error placing order for {symbol}: {Market_Order.get('retMsg')}")
-
-                # Send Message to Telegram
-                await send_telegram_message(
-                    f"Open New Position:\n\nSymbol: {symbol}\n"+
-                    f"Side: {Side}\n"+
-                    f"Entry Price: {Order['Entry_Price']}\n"+
-                    f"Take_Profit: {Tp_price}\n"+
-                    f"Stop Loss: {Order['Stop_Loss']}\n"+
-                    f"Time: {Order['Open_time']}"
-                )
+                        
         except Exception as e:
             print(f"Error in Execution_Order for {symbol}: {e}")
             await asyncio.sleep(1)
