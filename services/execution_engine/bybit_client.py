@@ -20,7 +20,11 @@ with open('exchange_info.json') as f:
 # =========================
 # Create session
 # =========================
-session = HTTP(api_key=creds['Bybit']['key'], api_secret=creds['Bybit']['secret'],demo=True)
+session = HTTP(
+  api_key="Jxyfw9hxY3NLVznAJx",
+  api_secret="Bl1XKTd3lh56rvhneJ4BS9RbmKTLFNgE4coe",
+  demo=True
+)
 
 # =========================
 # Helper Functions
