@@ -38,19 +38,32 @@ def TP_short(buy_price, sl, fees, RRR):
     return buy_price*((((((abs(((sl/buy_price)-1)*100)+fees)*RRR)+fees)*-1)/100)+1)
 
 async def Execution_Order(symbol):
+    """مهمة خلفية لمراقبة Redis بحثاً عن إشارات جديدة"""
+    print("📡 Signal Monitor Started...", flush=True)
     Redis = await init_redis()
+    pubsub = Redis.pubsub()
+
+    # الاشتراك في قنوات جميع العملات
+    channel = f"{symbol}_Trade_Signal"
+    if not channel:
+        print("⚠️ No symbols loaded to subscribe!", flush=True)
+        # حتى لو لم توجد رموز، نستمر في الحلقة لعدم إيقاف التاسك
+    else:
+        await pubsub.subscribe(channel)
+        print(f"✅ Subscribed to {symbol } channel")
     while True:
         try:
-            # brpop returns (key, value) when it gets a message from any of the keys
-            result = await Redis.brpop(f"{symbol}_Open_Position", 0)
-            if not result:
-                continue
-                
-            key, raw_order = result
-            Order = json_deserialize(json.loads(raw_order))
-            Side = Order["Side"]
+            # انتظار رسالة (timeout قصير للسماح للحلقة بالعمل)
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             
-            if isinstance(Order, dict):
+            if message:
+                data_str = message['data']
+                if isinstance(data_str, bytes):
+                    data_str = data_str.decode('utf-8')
+
+                Order = json.loads(data_str)
+                print(f"🔔 Signal Received: {Order}", flush=True)
+            
                 # Run synchronous API calls in a thread pool to avoid blocking the event loop
                 balance_info = await asyncio.to_thread(get_coin_balance, "USDT")
                 if not balance_info:
@@ -60,24 +73,24 @@ async def Execution_Order(symbol):
                 # Calculate Risk In Position
                 Amount = Amount_To_Risk(
                     float(balance_info["walletBalance"]),
-                    Risk_in_Position, Order["Entry_Price"],
-                    Order["Stop_Loss"],
+                    Risk_in_Position, Order["entry"],
+                    Order["stop_loss"],
                     fees
                 )
                 
                 Tp_price = format_price(
                     symbol,
                     TP_long(
-                        Order["Entry_Price"],
-                        Order["Stop_Loss"],
+                        Order["entry"],
+                        Order["stop_loss"],
                         fees,
                         Risk_Reward
                     )
                 ) if Side == "Long" else format_price(
                     symbol,
                     TP_short(
-                        Order["Entry_Price"],
-                        Order["Stop_Loss"],
+                        Order["entry"],
+                        Order["stop_loss"],
                         fees,
                         Risk_Reward
                     )
@@ -86,7 +99,7 @@ async def Execution_Order(symbol):
                 # Check Amount Not Smaller Then Min Qty 
                 if (
                     Amount >= min_qty(symbol) and
-                    (Amount * Order["Entry_Price"]) >= min_notional(symbol)
+                    (Amount * Order["entry"]) >= min_notional(symbol)
                 ):
                     # Run order placement in a thread pool
                     # pybit's HTTP methods are synchronous and use requests internally
@@ -97,16 +110,17 @@ async def Execution_Order(symbol):
                         qty=format_qty(
                             symbol,
                             Amount,
-                            Order["Entry_Price"]
+                            Order["entry"]
                         ),
                         take_profit=Tp_price,
-                        stop_loss=Order["Stop_Loss"]
+                        stop_loss=Order["stop_loss"]
                     )
                     
                     if Market_Order.get("result"):
+                        await Redis.publish(f"{symbol}_Open_Trade", json.dumps(json_serialize(Order)))
                         # Store Market Order In Database
                         await db_Orders[symbol].insert_one(Market_Order["result"])
-                        print(f"System Placed Market Order in {symbol} at {Order['Entry_Price']}")
+                        print(f"System Placed Market Order in {symbol} at {Order['entry']}")
                     else:
                         print(f"Error placing order for {symbol}: {Market_Order.get('retMsg')}")
                         
@@ -114,25 +128,13 @@ async def Execution_Order(symbol):
             print(f"Error in Execution_Order for {symbol}: {e}")
             await asyncio.sleep(1)
 
-async def worker_wrapper(fn, symbol):
-    while True:
-        try:
-           await fn(symbol)
-        except Exception as e:
-            print(traceback.format_exc())
-            await asyncio.sleep(5)
+
 
 async def main():
     tasks = []
     for sym in symbols:
-        tasks.append(
-            asyncio.create_task(
-                worker_wrapper(
-                    Execution_Order,sym
-                )
-            )
-        )
-
+        tasks.append(asyncio.create_task(Execution_Order(sym)))
+        
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":

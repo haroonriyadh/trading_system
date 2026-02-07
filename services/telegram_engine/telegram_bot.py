@@ -19,73 +19,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
     await update.message.reply_text("🚀 **Crypto Trading Bot is Online!**\nScanning for signals...", parse_mode='Markdown')
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الأزرار التفاعلية (موافقة/رفض)"""
-    query = update.callback_query
-    await query.answer() # لإيقاف أيقونة التحميل في تيليجرام
-
-    try:
-        # data format: "ACTION|SYMBOL|TIMESTAMP_KEY"
-        parts = query.data.split("|")
-        if len(parts) < 3:
-            return
-
-        action, symbol, ts_key = parts[0], parts[1], parts[2]
-        
-        Redis = await init_redis()
-        signal_key = f"PENDING_SIGNAL:{symbol}:{ts_key}"
-        
-        # استرجاع بيانات الإشارة الأصلية
-        signal_data_raw = await Redis.get(signal_key)
-
-        if not signal_data_raw:
-            await query.edit_message_caption(caption=f"⚠️ Signal Expired or Not Found for {symbol}.")
-            return
-
-        signal_data = json.loads(signal_data_raw)
-        side = signal_data.get('side', 'Long')
-        
-        # توحيد صيغة Side (Long/Short)
-        normalized_side = "Long" if side in ["Bull", "Long", "BUY"] else "Short"
-
-        if action == "APPROVE":
-            # إعداد حمولة التنفيذ (Payload) لمحرك التنفيذ
-            execution_payload = {
-                "symbol": symbol,
-                "Side": normalized_side,
-                "Entry_Price": signal_data.get('entry') or signal_data.get('Entry_Price'),
-                "Stop_Loss": signal_data.get('stop_loss') or signal_data.get('Stop_Loss'),
-                "Take_Profit": signal_data.get('take_profit') or signal_data.get('Take_Profit'),
-                "Quantity": "USER_DEFINED", 
-                "Open_time": datetime.now().isoformat()
-            }
-
-            # إرسال إلى طابور التنفيذ
-            queue_key = f"{symbol}_Open_Position"
-            
-            # نستخدم json_serialize لضمان توافق الأنواع
-            await Redis.lpush(queue_key, json.dumps(json_serialize(execution_payload)))
-
-            # تحديث الرسالة للمستخدم
-            success_msg = (
-                f"✅ **Order Approved & Sent!**\n"
-                f"🪙 {symbol} ({normalized_side})\n"
-                f"🚀 Entry: {execution_payload['Entry_Price']}"
-            )
-            await query.edit_message_caption(caption=success_msg, parse_mode='Markdown')
-
-            # حذف الإشارة المعلقة لمنع التكرار
-            await Redis.delete(signal_key)
-
-        elif action == "REJECT":
-            await Redis.delete(signal_key)
-            await query.edit_message_caption(caption=f"❌ **Signal Rejected** for {symbol}.", parse_mode='Markdown')
-
-    except Exception as e:
-        print(f"Callback Error: {e}")
-        traceback.print_exc()
-        await query.edit_message_caption(caption=f"⚠️ Error processing request: {str(e)}")
-
 
 async def monitor_signals(application: Application):
     """مهمة خلفية لمراقبة Redis بحثاً عن إشارات جديدة"""
@@ -94,7 +27,7 @@ async def monitor_signals(application: Application):
     pubsub = Redis.pubsub()
 
     # الاشتراك في قنوات جميع العملات
-    channels = [f"{sym}_Trade_Signal" for sym in symbols]
+    channels = [f"{sym}_Open_Trade" for sym in symbols]
     if not channels:
         print("⚠️ No symbols loaded to subscribe!", flush=True)
         # حتى لو لم توجد رموز، نستمر في الحلقة لعدم إيقاف التاسك
@@ -134,19 +67,7 @@ async def monitor_signals(application: Application):
                 chart_created = create_candlestick_chart(symbol, candles, pattern_data=signal, save_path=chart_path)
 
                 if chart_created:
-                    # 3. حفظ الإشارة في Redis
-                    signal_key = f"PENDING_SIGNAL:{symbol}:{ts_key}"
-                    await Redis.setex(signal_key, 3600, json.dumps(signal))
-
-                    # 4. إعداد الأزرار
-                    keyboard = [
-                        [
-                            InlineKeyboardButton("✅ Approve", callback_data=f"APPROVE|{symbol}|{ts_key}"),
-                            InlineKeyboardButton("❌ Reject", callback_data=f"REJECT|{symbol}|{ts_key}")
-                        ]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
+                  
                     # 5. تنسيق الرسالة
                     side = signal.get('side', 'Unknown')
                     entry = signal.get('entry') or signal.get('Entry_Price')
@@ -155,14 +76,13 @@ async def monitor_signals(application: Application):
                     pattern = signal.get('pattern', 'Signal')
 
                     caption = (
-                        f"🚨 **New Opportunity Detected**\n\n"
+                        f"🚨 **New Open Trade**\n\n"
                         f"🪙 **Pair:** #{symbol}\n"
                         f"📊 **Pattern:** {pattern}\n"
                         f"↕️ **Side:** {side}\n"
                         f"💰 **Entry:** {entry}\n"
                         f"🛑 **Stop Loss:** {stop}\n"
                         f"🎯 **Target:** {tp}\n\n"
-                        f"⚡ *Action Required: Approve to Execute*"
                     )
 
                     # 6. الإرسال
@@ -172,8 +92,7 @@ async def monitor_signals(application: Application):
                                 chat_id=TELEGRAM_CHAT_ID,
                                 photo=photo,
                                 caption=caption,
-                                parse_mode='Markdown',
-                                reply_markup=reply_markup
+                                parse_mode='Markdown'
                             )
                         os.remove(chart_path)
                     else:
@@ -205,7 +124,6 @@ def main():
 
     # إضافة المعالجات
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(handle_callback))
 
     print("✅ Bot is running. Press Ctrl+C to stop.", flush=True)
     
