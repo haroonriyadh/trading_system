@@ -5,11 +5,6 @@ import json
 import time
 import math
 
-# =========================
-# Load API credentials
-# =========================
-with open('authcreds.json') as f:
-    creds = json.load(f)
 
 # =========================
 # Load Exchange_info
