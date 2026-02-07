@@ -62,6 +62,7 @@ async def Execution_Order(symbol):
                     data_str = data_str.decode('utf-8')
 
                 Order = json.loads(data_str)
+                Side = Order["side"]
                 print(f"🔔 Signal Received: {Order}", flush=True)
             
                 # Run synchronous API calls in a thread pool to avoid blocking the event loop
@@ -86,7 +87,7 @@ async def Execution_Order(symbol):
                         fees,
                         Risk_Reward
                     )
-                ) if Side == "Long" else format_price(
+                ) if Side == "Bull" else format_price(
                     symbol,
                     TP_short(
                         Order["entry"],
@@ -106,7 +107,7 @@ async def Execution_Order(symbol):
                     Market_Order = await asyncio.to_thread(
                         place_market_order,
                         symbol=symbol,
-                        side="Buy" if Side == "Long" else "Sell",
+                        side="Buy" if Side == "Bull" else "Sell",
                         qty=format_qty(
                             symbol,
                             Amount,
