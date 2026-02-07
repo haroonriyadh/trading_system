@@ -5,9 +5,10 @@ import traceback
 from shared.database import (
     db_Orders,
     init_redis,
+    json_serialize,
     json_deserialize
-    
 )
+
 
 from bybit_client import (
     get_coin_balance,
