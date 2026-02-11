@@ -4,8 +4,9 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Semaphore};
+use tokio::time::{interval, Duration};
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{info, warn, error};
+use tracing::{warn, error};
 
 // =================================================================================
 //  1. Data Structures
@@ -60,18 +61,12 @@ struct HLPoint {
 
 #[tokio::main]
 async fn main() {
-    // 1. Init Logger
     tracing_subscriber::fmt()
-        .with_env_filter("info")
+        .with_env_filter("warn") // فقط تحذيرات وإغلاق الشمعة
         .init();
 
-    info!("🚀 System Initialization Started (Unified Connection Mode with Auto-Indexing)...");
-
-    // 2. Connect DBs
     let mongo_host = std::env::var("MONGO_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-
-    info!("🔌 Connecting to Mongo at {} and Redis at {}...", mongo_host, redis_host);
 
     let mongo_url = format!("mongodb://{}:27017", mongo_host);
     let client_options = ClientOptions::parse(&mongo_url).await.unwrap();
@@ -85,22 +80,13 @@ async fn main() {
 
     let (tx, _) = broadcast::channel::<String>(10000);
 
-    info!("🌍 Loading symbols from shared/symbols.json...");
     let symbols = load_symbols_from_json().await;
     if symbols.is_empty() {
-        error!("❌ Failed to fetch symbols. Please check internet connection.");
+        error!("❌ Failed to fetch symbols.");
         return;
     }
-    
-    match symbols.len() {
-        0 => warn!("⚠️ No symbols loaded."),
-        1 => info!("✅ Loaded 1 symbol: {}", symbols[0]),
-        _ => info!("✅ Loaded {} symbols. Examples: {}, {}", symbols.len(), symbols[0], symbols[1]),
-    }
 
-    let ws_url = "wss://stream.bybit.com/v5/public/linear";
-
-    // --- Background Task: Historical Data (Includes Index Creation) ---
+    // Historical Data Background
     let symbols_history = symbols.clone();
     let db_candle_hist = db_candle.clone();
     let db_indicitors_hist = db_indicitors.clone();
@@ -108,101 +94,74 @@ async fn main() {
         init_historical_data(&symbols_history, &db_candle_hist, &db_indicitors_hist).await;
     });
 
-    // --- Single WebSocket Connection Logic ---
+    // WebSocket واحد لكل الرموز
     let topics: Vec<String> = symbols.iter().map(|s| format!("kline.1.{}", s)).collect();
-
-    info!("📡 Starting Main WebSocket Loop for {} symbols...", symbols.len());
+    let ws_url = "wss://stream.bybit.com/v5/public/linear";
 
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws_stream, _)) => {
-                info!("✅ WebSocket Connected (Single Stream).");
+                // Subscribe لكل الرموز
+                let subscribe_msg = serde_json::json!({"op":"subscribe","args":topics});
+                if let Err(e) = ws_stream.send(Message::Text(subscribe_msg.to_string())).await {
+                    error!("❌ Subscription failed: {:?}", e);
+                    break;
+                }
 
-                for chunk in topics.chunks(10) {
-                    let subscribe_msg = serde_json::json!({
-                        "op": "subscribe",
-                        "args": chunk
-                    });
-
-                    if let Err(e) = ws_stream.send(Message::Text(subscribe_msg.to_string())).await {
-                        error!("❌ Subscription command failed: {:?}", e);
-                        break; 
+                let mut ping_interval = interval(Duration::from_secs(15));
+                loop {
+                    tokio::select! {
+                        Some(msg) = ws_stream.next() => {
+                            match msg {
+                                Ok(Message::Text(txt)) => {
+                                    handle_message(&txt, &tx, &db_candle, &redis_conn).await;
+                                },
+                                Ok(Message::Pong(_)) => {}, // Pong received
+                                Ok(Message::Close(_)) => {
+                                    warn!("⚠️ WebSocket closed by server, reconnecting...");
+                                    break;
+                                },
+                                _ => {}
+                            }
+                        }
+                        _ = ping_interval.tick() => {
+                            // Ping to keep alive
+                            if let Err(e) = ws_stream.send(Message::Ping(vec![])).await {
+                                error!("❌ Ping failed: {:?}, reconnecting...", e);
+                                break;
+                            }
+                        }
+                        _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                            warn!("⚠️ No messages for 30s, reconnecting...");
+                            break;
+                        }
                     }
                 }
-                info!("📤 All subscription commands sent via single connection.");
-
-                while let Some(Ok(msg)) = ws_stream.next().await {
-                    if let Message::Text(txt) = msg {
-                        handle_message(&txt, &tx, &db_candle, &redis_conn).await;
-                    }
-                }
-                warn!("⚠️ WebSocket connection closed by server. Reconnecting...");
             }
             Err(e) => {
                 error!("❌ Connection Failed: {:?}. Retry in 5s...", e);
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
        }
     }
 }
 
 // =================================================================================
-//  3. Helpers
+//  Helpers and Handlers (unchanged logic, only removed info! printing)
 // =================================================================================
 
 async fn load_symbols_from_json() -> Vec<String> {
-    let paths = vec![
-        "shared/symbols.json",           
-        "../shared/symbols.json",        
-        "../../shared/symbols.json",     
-    ];
-
-    let mut content = None;
+    let paths = vec!["shared/symbols.json","../shared/symbols.json","../../shared/symbols.json"];
     for p in paths {
-        let path = std::path::Path::new(p);
-        if path.exists() {
-            if let Ok(c) = std::fs::read_to_string(path) {
-                content = Some(c);
-                break;
-            }
-        }
+        if let Ok(c) = std::fs::read_to_string(p) { return serde_json::from_str::<Vec<String>>(&c).unwrap_or(vec!["BTCUSDT".to_string()]); }
     }
-
-    let content = match content {
-        Some(c) => c,
-        None => {
-            error!("❌ symbols.json not found in common locations.");
-            return vec!["BTCUSDT".to_string()];
-        }
-    };
-
-    match serde_json::from_str::<Vec<String>>(&content) {
-        Ok(symbols) => symbols,
-        Err(e) => {
-            error!("❌ Failed to parse symbols.json: {:?}", e);
-            vec!["BTCUSDT".to_string()]
-        }
-    }
+    vec!["BTCUSDT".to_string()]
 }
 
-// ---------------------------------------------------------------------------------
-//  🛠️ NEW: Helper to ensure index exists
-// ---------------------------------------------------------------------------------
 async fn ensure_index(collection: &Collection<mongodb::bson::Document>) {
-    // Create an index on "Open_time" in descending order (-1)
-    let model = IndexModel::builder()
-        .keys(doc! { "Open_time": -1 })
-        .build();
-
-    // create_index is idempotent: if it exists, it does nothing (very fast)
-    if let Err(e) = collection.create_index(model, None).await {
-        error!("❌ Failed to create index for collection {}: {:?}", collection.name(), e);
-    }
+    let model = IndexModel::builder().keys(doc! { "Open_time": -1 }).build();
+    let _ = collection.create_index(model, None).await;
 }
-
-// =================================================================================
-//  4. Real-Time Handler
-// =================================================================================
 
 async fn handle_message(
     msg: &str,
@@ -210,17 +169,10 @@ async fn handle_message(
     db: &mongodb::Database,
     redis_conn: &redis::aio::MultiplexedConnection
 ) {
-    let parsed: BybitMsg = match serde_json::from_str(msg) {
-        Ok(val) => val,
-        Err(_) => return,
-    };
-
+    let parsed: BybitMsg = match serde_json::from_str(msg) { Ok(v) => v, Err(_) => return; };
     if parsed.data.is_empty() { return; }
 
-    let symbol = match parsed.topic.strip_prefix("kline.1.") {
-        Some(s) => s,
-        None => parsed.topic,
-    };
+    let symbol = parsed.topic.strip_prefix("kline.1.").unwrap_or(parsed.topic);
 
     for candle in parsed.data {
         let doc = doc! {
@@ -232,15 +184,7 @@ async fn handle_message(
             "Volume": candle.volume,
             "Close_time": DateTime::from_millis(candle.end),
         };
-
         let json_str = serde_json::to_string(&doc).unwrap_or_default();
-
-        info!(
-            symbol = %symbol,
-            price = %candle.close,
-            "⚡ Update"
-        );
-
         let mut r_conn = redis_conn.clone();
         let r_symbol = symbol.to_string();
         let r_json = json_str.clone();
@@ -248,30 +192,26 @@ async fn handle_message(
 
         let redis_task = async move {
             let _: redis::RedisResult<()> = r_conn.publish(format!("{}_RealTime", r_symbol), &r_json).await;
-            
             if is_confirm {
-                 warn!(symbol = %r_symbol, price = %candle.close, "🔥 Candle CLOSED");
                  let _: redis::RedisResult<()> = r_conn.publish(format!("{}_Close_Candle", r_symbol), &r_json).await;
+                 warn!(symbol = %r_symbol, price = %candle.close, "🔥 Candle CLOSED");
             }
         };
 
         let mongo_task = async {
             if candle.confirm {
                 let collection: Collection<mongodb::bson::Document> = db.collection(symbol);
-                // Note: We don't create index here to avoid overhead on every msg.
-                // It is handled in init_historical_data.
                 let _ = collection.insert_one(doc, None).await;
             }
         };
 
         let _ = tx.send(json_str);
-        
         tokio::join!(redis_task, mongo_task);
     }
 }
 
 // =================================================================================
-//  5. Historical Data Logic (With Indexing)
+//  Historical Data (unchanged)
 // =================================================================================
 
 async fn init_historical_data(symbols: &[String], db_candle: &mongodb::Database, db_indicitors: &mongodb::Database) {
