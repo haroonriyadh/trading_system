@@ -6,11 +6,11 @@ use mongodb::{
     IndexModel,
     bson::{doc, DateTime, Document}
 };
-use redis::{AsyncCommands, Pipeline};
+use redis::JsonAsyncCommands; // Import generic commands trait if needed, or leave blank if strictly using pipe
 use serde::{Deserialize, Deserializer};
-use std::{sync::Arc, time::Duration, collections::HashMap};
+use std::{sync::Arc, collections::HashMap};
 use tokio::sync::{mpsc, Semaphore};
-use tokio::time::{interval, timeout};
+use tokio::time::{interval, Duration}; // Fixed imports here
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{warn, error, info, debug};
 
@@ -18,7 +18,7 @@ use tracing::{warn, error, info, debug};
 //  1. Data Structures & Types
 // =================================================================================
 
-// استخدام Arc<str> لتقليل الـ Allocations للرموز المتكررة
+// Optimization: Arc<str> reduces heap allocations for repeated symbols
 type Symbol = Arc<str>;
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +46,6 @@ struct CandleRaw {
     confirm: bool,
 }
 
-// الهيكل الداخلي الذي يتم تمريره عبر القنوات (Channel)
 #[derive(Debug, Clone)]
 struct ProcessedCandle {
     symbol: Symbol,
@@ -72,35 +71,61 @@ where
 }
 
 // =================================================================================
-//  2. Main Entry Point
+//  2. Main Entry Point (With Retry Logic)
 // =================================================================================
 
 #[tokio::main]
 async fn main() {
-    // 1. Initialize High-Performance Logger
+    // 1. Initialize Logger
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .with_thread_ids(true)
         .init();
 
-    // 2. Configuration & Connections
+    // 2. Configuration
     let mongo_host = std::env::var("MONGO_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
 
-    // Mongo Setup (Optimized Connection Pool)
+    // --- Robust MongoDB Connection (Retry Loop) ---
     let mongo_url = format!("mongodb://{}:27017", mongo_host);
     let mut client_options = ClientOptions::parse(&mongo_url).await.unwrap();
-    client_options.min_pool_size = Some(5);  // Keep connections warm
-    client_options.max_pool_size = Some(50); // Handle bursts
-    let mongo_client = Client::with_options(client_options).unwrap();
-    
+    client_options.min_pool_size = Some(5);
+    client_options.max_pool_size = Some(50);
+
+    let mongo_client = loop {
+        info!("⏳ Connecting to MongoDB at {}...", mongo_host);
+        match Client::with_options(client_options.clone()) {
+            Ok(client) => {
+                // Ping to verify actual connection
+                match client.database("admin").run_command(doc! {"ping": 1}, None).await {
+                    Ok(_) => break client,
+                    Err(e) => warn!("⚠️ Mongo reachable but ping failed: {}. Retrying in 3s...", e),
+                }
+            },
+            Err(e) => warn!("⚠️ Mongo connection failed: {}. Retrying in 3s...", e),
+        }
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    };
+    info!("✅ MongoDB Connected Successfully.");
+
     let db_candle = mongo_client.database("CandleStick_data");
     let db_indicators = mongo_client.database("Indicitors");
 
-    // Redis Setup
+    // --- Robust Redis Connection (Retry Loop) ---
     let redis_url = format!("redis://{}:6379/", redis_host);
     let redis_client = redis::Client::open(redis_url).unwrap();
-    let redis_conn = redis_client.get_multiplexed_async_connection().await.unwrap();
+
+    let redis_conn = loop {
+        info!("⏳ Connecting to Redis at {}...", redis_host);
+        match redis_client.get_multiplexed_async_connection().await {
+            Ok(con) => break con,
+            Err(e) => {
+                warn!("⚠️ Redis not ready: {}. Retrying in 3s...", e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        }
+    };
+    info!("✅ Redis Connected Successfully.");
 
     // 3. Load Symbols
     let symbols = load_symbols_from_json().await;
@@ -108,11 +133,9 @@ async fn main() {
         error!("❌ No symbols found. Exiting.");
         return;
     }
-    // Convert to Arc<str> for cheap cloning
     let arc_symbols: Vec<Symbol> = symbols.iter().map(|s| Arc::from(s.as_str())).collect();
 
-    // 4. Background Task: Historical Data (The "Cold" Path)
-    // Run this independently so it doesn't block the real-time feed startup
+    // 4. Background Task: Historical Data
     let symbols_hist = symbols.clone();
     let db_c_hist = db_candle.clone();
     let db_i_hist = db_indicators.clone();
@@ -121,11 +144,10 @@ async fn main() {
         init_historical_data(symbols_hist, db_c_hist, db_i_hist).await;
     });
 
-    // 5. Setup Channels (Actor Pattern)
-    // Buffer size 50,000 ensures we can handle massive spikes without blocking WS
+    // 5. Setup Channels
     let (tx_processing, rx_processing) = mpsc::channel::<ProcessedCandle>(50_000);
 
-    // 6. Spawn Processor Task (The "Consumer")
+    // 6. Spawn Processor Task
     let db_candle_clone = db_candle.clone();
     let redis_conn_clone = redis_conn.clone();
     
@@ -133,11 +155,11 @@ async fn main() {
         data_processor_loop(rx_processing, db_candle_clone, redis_conn_clone).await;
     });
 
-    // 7. WebSocket Loop (The "Producer" - Hot Path)
+    // 7. WebSocket Loop (Producer)
     let ws_url = "wss://stream.bybit.com/v5/public/linear";
-    let sub_chunks: Vec<_> = arc_symbols.chunks(10).collect(); // Batch subscriptions
+    let sub_chunks: Vec<_> = arc_symbols.chunks(10).collect();
 
-    info!("🚀 System initialized. Starting WebSocket loop...");
+    info!("🚀 System fully initialized. Starting WebSocket loop...");
 
     loop {
         info!("🔌 Connecting to Bybit WS...");
@@ -145,7 +167,6 @@ async fn main() {
             Ok((mut ws_stream, _)) => {
                 info!("✅ WS Connected.");
 
-                // Send Subscriptions
                 for chunk in &sub_chunks {
                     let topics: Vec<String> = chunk.iter().map(|s| format!("kline.1.{}", s)).collect();
                     let subscribe_msg = serde_json::json!({"op":"subscribe","args":topics});
@@ -162,10 +183,9 @@ async fn main() {
                         msg_opt = ws_stream.next() => {
                             match msg_opt {
                                 Some(Ok(Message::Text(txt))) => {
-                                    // Parse and forward to processor channel immediately
                                     process_raw_msg(&txt, &tx_processing).await;
                                 }
-                                Some(Ok(Message::Pong(_))) => { /* Heartbeat */ }
+                                Some(Ok(Message::Pong(_))) => {}
                                 Some(Ok(Message::Close(_))) => { warn!("⚠️ WS Close frame"); break; }
                                 Some(Err(e)) => { error!("WS Error: {:?}", e); break; }
                                 None => { warn!("⚠️ WS Stream ended"); break; }
@@ -200,7 +220,6 @@ async fn process_raw_msg(msg: &str, tx: &mpsc::Sender<ProcessedCandle>) {
         Ok(parsed) => {
             if parsed.data.is_empty() { return; }
 
-            // Efficient string slicing to get symbol
             let topic_str = parsed.topic.as_str();
             let symbol_str = if topic_str.starts_with("kline.1.") {
                 &topic_str[8..]
@@ -230,19 +249,12 @@ async fn process_raw_msg(msg: &str, tx: &mpsc::Sender<ProcessedCandle>) {
                     close_price: candle.close,
                 };
 
-                // Non-blocking send (wait only if buffer full)
                 if let Err(_) = tx.send(p_candle).await {
-                    error!("Processor channel closed!");
                     return;
                 }
             }
         }
-        Err(e) => {
-             // Only log parse errors that are actual errors (not ping/pong text)
-             if !msg.contains("success") && !msg.contains("op") {
-                 debug!("Parse warning: {:?} | Msg: {}", e, msg);
-             }
-        }
+        Err(_) => { /* Ignore non-candle messages (like pong/success) */ }
     }
 }
 
@@ -255,16 +267,13 @@ async fn data_processor_loop(
     db: mongodb::Database,
     mut redis_conn: redis::aio::MultiplexedConnection
 ) {
-    // Buffer for MongoDB Batch Insert: Map<Symbol, Vec<Document>>
     let mut mongo_buffer: HashMap<Symbol, Vec<Document>> = HashMap::new();
-    
-    // Flush interval allows batching inserts instead of 1-by-1
     let mut flush_interval = interval(Duration::from_millis(300)); 
 
     loop {
         tokio::select! {
             Some(candle) = rx.recv() => {
-                // --- Redis Pipelining (Low Latency) ---
+                // Redis Pipeline
                 let mut pipe = redis::pipe();
                 let rt_channel = format!("{}_RealTime", candle.symbol);
                 pipe.publish(&rt_channel, &candle.json);
@@ -273,28 +282,22 @@ async fn data_processor_loop(
                     let close_channel = format!("{}_Close_Candle", candle.symbol);
                     pipe.publish(&close_channel, &candle.json);
                     
-                    // Add to Mongo Buffer ONLY if confirmed
                     mongo_buffer.entry(candle.symbol.clone())
                         .or_insert_with(Vec::new)
                         .push(candle.doc);
                         
-                    // Log significant events
                     debug!("🔥 {} Closed: {}", candle.symbol, candle.close_price);
                 }
 
-                // Execute Redis Pipeline async
+                // Execute async
                 let _: redis::RedisResult<()> = pipe.query_async(&mut redis_conn).await;
             }
 
             _ = flush_interval.tick() => {
-                // --- Mongo Bulk Insert (Throughput) ---
                 if !mongo_buffer.is_empty() {
                     for (symbol, docs) in mongo_buffer.drain() {
                         if docs.is_empty() { continue; }
-                        
                         let collection = db.collection::<Document>(&symbol);
-                        
-                        // Spawn insert task to prevent blocking the Redis loop
                         tokio::spawn(async move {
                             if let Err(e) = collection.insert_many(docs, None).await {
                                 error!("❌ Mongo flush failed for {}: {:?}", symbol, e);
@@ -308,7 +311,7 @@ async fn data_processor_loop(
 }
 
 // =================================================================================
-//  5. Historical Data & Algorithms (The "Cold" Path)
+//  5. Historical Data & Algorithms
 // =================================================================================
 
 async fn init_historical_data(
@@ -318,14 +321,12 @@ async fn init_historical_data(
 ) {
     info!("📚 Starting Historical Sync for {} symbols...", symbols.len());
 
-    // Reuse HTTP Client for connection pooling
     let http_client = reqwest::Client::builder()
         .pool_idle_timeout(Duration::from_secs(15))
         .pool_max_idle_per_host(10)
         .build()
         .unwrap();
 
-    // Limit concurrency to avoid Rate Limits (e.g., 10 concurrent requests)
     let semaphore = Arc::new(Semaphore::new(10));
     let mut handles = Vec::new();
 
@@ -338,7 +339,6 @@ async fn init_historical_data(
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
             
-            // Ensure index exists first
             ensure_index(&db_c, &symbol).await;
 
             let url = format!(
@@ -379,7 +379,6 @@ async fn process_history_json(
 
         for item in list {
             if let Some(c) = item.as_array() {
-                // Safe parsing defaults
                 let start_ts = c[0].as_str().unwrap_or("0").parse::<i64>().unwrap_or(0);
                 let open = c[1].as_str().unwrap_or("0").parse::<f64>().unwrap_or(0.0);
                 let high = c[2].as_str().unwrap_or("0").parse::<f64>().unwrap_or(0.0);
@@ -407,12 +406,10 @@ async fn process_history_json(
             candle_docs.reverse();
             raw_candles.reverse();
 
-            // Bulk Insert Candles
             let col_c: Collection<Document> = db_c.collection(symbol);
-            let _ = col_c.delete_many(doc! {}, None).await; // Clear old
+            let _ = col_c.delete_many(doc! {}, None).await;
             let _ = col_c.insert_many(candle_docs, None).await;
 
-            // Detect & Insert HL
             let hl_points = detect_historical_hl(&raw_candles);
             if !hl_points.is_empty() {
                 let hl_docs: Vec<Document> = hl_points.into_iter().map(|p| {
@@ -424,14 +421,13 @@ async fn process_history_json(
                 }).collect();
 
                 let col_i: Collection<Document> = db_i.collection(symbol);
-                let _ = col_i.delete_many(doc! {}, None).await; // Clear old
+                let _ = col_i.delete_many(doc! {}, None).await;
                 let _ = col_i.insert_many(hl_docs, None).await;
             }
         }
     }
 }
 
-// Pure function, zero copy on input
 fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
     let mut points = Vec::new();
     if candles.len() < 5 { return points; }
@@ -443,11 +439,9 @@ fn detect_historical_hl(candles: &[(i64, f64, f64, f64, f64)]) -> Vec<HLPoint> {
         let next1 = window[3];
         let next2 = window[4];
 
-        // Swing High
         if current.2 > prev1.2 && current.2 > prev2.2 && current.2 > next1.2 && current.2 > next2.2 {
             points.push(HLPoint { open_time: current.0, price: current.2, hl_type: 1 });
         }
-        // Swing Low
         if current.3 < prev1.3 && current.3 < prev2.3 && current.3 < next1.3 && current.3 < next2.3 {
             points.push(HLPoint { open_time: current.0, price: current.3, hl_type: 0 });
         }
@@ -463,7 +457,7 @@ async fn load_symbols_from_json() -> Vec<String> {
     let paths = vec![
         "shared/symbols.json",
         "../shared/symbols.json",
-        "symbols.json"
+        "../../shared/symbols.json",    
     ];
 
     for p in paths {
@@ -473,7 +467,6 @@ async fn load_symbols_from_json() -> Vec<String> {
             }
         }
     }
-    // Fallback if file missing
     warn!("⚠️ Symbols file not found, defaulting to BTCUSDT");
     vec!["BTCUSDT".to_string()] 
 }
